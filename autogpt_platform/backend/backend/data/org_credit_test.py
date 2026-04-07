@@ -61,6 +61,12 @@ class TestSpendOrgCredits:
         result = await spend_org_credits("org-1", "user-1", 100)
         assert result == 900
         mock_prisma.orgcredittransaction.create.assert_called_once()
+        # Verify transaction data is correct
+        tx_data = mock_prisma.orgcredittransaction.create.call_args[1]["data"]
+        assert tx_data["orgId"] == "org-1"
+        assert tx_data["initiatedByUserId"] == "user-1"
+        assert tx_data["amount"] == -100
+        assert tx_data["runningBalance"] == 900
 
     @pytest.mark.asyncio
     async def test_spend_insufficient_balance_raises(self, mock_prisma):
@@ -114,6 +120,12 @@ class TestTopUpOrgCredits:
         result = await top_up_org_credits("org-1", 500, user_id="user-1")
         assert result == 1500
         mock_prisma.execute_raw.assert_called_once()  # Atomic upsert
+        # Verify transaction data
+        mock_prisma.orgcredittransaction.create.assert_called_once()
+        tx_data = mock_prisma.orgcredittransaction.create.call_args[1]["data"]
+        assert tx_data["orgId"] == "org-1"
+        assert tx_data["amount"] == 500
+        assert tx_data["initiatedByUserId"] == "user-1"
         mock_prisma.orgcredittransaction.create.assert_called_once()
 
     @pytest.mark.asyncio
@@ -177,6 +189,9 @@ class TestSeatManagement:
         assert result["total"] == 2
         assert result["active"] == 1
         assert result["inactive"] == 1
+        # Verify the query filtered by org
+        call_kwargs = mock_prisma.organizationseatassignment.find_many.call_args[1]
+        assert call_kwargs["where"]["organizationId"] == "org-1"
 
     @pytest.mark.asyncio
     async def test_assign_seat(self, mock_prisma):
@@ -191,5 +206,10 @@ class TestSeatManagement:
     async def test_unassign_seat(self, mock_prisma):
         await unassign_seat("org-1", "user-1")
         mock_prisma.organizationseatassignment.update.assert_called_once()
-        update_data = mock_prisma.organizationseatassignment.update.call_args[1]["data"]
-        assert update_data["status"] == "INACTIVE"
+        call_kwargs = mock_prisma.organizationseatassignment.update.call_args[1]
+        # Verify correct record targeted
+        where = call_kwargs["where"]["organizationId_userId"]
+        assert where["organizationId"] == "org-1"
+        assert where["userId"] == "user-1"
+        # Verify status set to INACTIVE
+        assert call_kwargs["data"]["status"] == "INACTIVE"

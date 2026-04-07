@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -3067,3 +3068,382 @@ class TestPR18Cutover:
         assert (
             "userId" not in where_arg
         ), "get_graph should not use userId after full cutover"
+
+
+# ============================================================================
+# Review-findings tests (xfail)
+# ============================================================================
+
+
+class TestReviewFindings:
+    """Tests for issues found by code review agents. Written as xfail first."""
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _make_org(self, **overrides):
+        m = MagicMock()
+        m.id = overrides.get("id", "org-review-1")
+        m.name = overrides.get("name", "Review Org")
+        m.slug = overrides.get("slug", "review-org")
+        m.avatarUrl = overrides.get("avatarUrl", None)
+        m.description = overrides.get("description", None)
+        m.isPersonal = overrides.get("isPersonal", False)
+        m.createdAt = datetime(2025, 6, 1, tzinfo=timezone.utc)
+        m.deletedAt = None
+        m.Members = []
+        return m
+
+    def _owner_ctx(self, org_id="org-review-1", team_id="team-review-1"):
+        ctx = MagicMock()
+        ctx.user_id = USER_ID
+        ctx.org_id = org_id
+        ctx.team_id = team_id
+        return ctx
+
+    def _make_invitation(self, **overrides):
+        m = MagicMock()
+        m.id = overrides.get("id", "inv-1")
+        m.orgId = overrides.get("orgId", "org-review-1")
+        m.email = overrides.get("email", "test@example.com")
+        m.isAdmin = overrides.get("isAdmin", False)
+        m.isBillingManager = overrides.get("isBillingManager", False)
+        m.token = overrides.get("token", "secret-token-abc")
+        m.expiresAt = overrides.get(
+            "expiresAt", datetime(2099, 1, 1, tzinfo=timezone.utc)
+        )
+        m.createdAt = overrides.get(
+            "createdAt", datetime(2025, 6, 1, tzinfo=timezone.utc)
+        )
+        m.acceptedAt = overrides.get("acceptedAt", None)
+        m.revokedAt = overrides.get("revokedAt", None)
+        m.teamIds = overrides.get("teamIds", [])
+        m.invitedByUserId = overrides.get("invitedByUserId", USER_ID)
+        m.targetUserId = overrides.get("targetUserId", None)
+        return m
+
+    def _make_transfer(self, **overrides):
+        m = MagicMock()
+        m.id = overrides.get("id", "tr-review-1")
+        m.resourceType = overrides.get("resourceType", "AgentGraph")
+        m.resourceId = overrides.get("resourceId", GRAPH_ID)
+        m.sourceOrganizationId = overrides.get("sourceOrganizationId", "org-A")
+        m.targetOrganizationId = overrides.get("targetOrganizationId", "org-B")
+        m.initiatedByUserId = overrides.get("initiatedByUserId", USER_ID)
+        m.status = overrides.get("status", "PENDING")
+        m.sourceApprovedByUserId = overrides.get("sourceApprovedByUserId", None)
+        m.targetApprovedByUserId = overrides.get("targetApprovedByUserId", None)
+        m.completedAt = overrides.get("completedAt", None)
+        m.reason = overrides.get("reason", None)
+        m.createdAt = datetime(2025, 6, 1, tzinfo=timezone.utc)
+        return m
+
+    # ------------------------------------------------------------------
+    # 1. Invitation token not leaked in list response
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason="Review: InvitationResponse includes raw token in list endpoints"
+    )
+    async def test_invitation_list_response_excludes_token(self):
+        """GET /invitations should NOT return the raw token -- only the
+        create response should."""
+        from backend.api.features.orgs.model import InvitationResponse
+
+        # InvitationResponse is used for both create AND list endpoints.
+        # The raw token field should NOT be present in the list response model.
+        # If there is a single model for both, the list endpoint leaks tokens.
+        inv = self._make_invitation()
+        response = InvitationResponse.from_db(inv)
+        response_fields = set(response.model_dump().keys())
+
+        # The token MUST NOT appear in a list-endpoint response.
+        # A separate InvitationListResponse (without token) is needed.
+        assert "token" not in response_fields, (
+            "InvitationResponse exposes the raw token. "
+            "List endpoints must use a model without the token field."
+        )
+
+    # ------------------------------------------------------------------
+    # 2. decline_invitation doesn't check if already accepted
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason="Review: decline_invitation doesn't check if already accepted"
+    )
+    async def test_decline_already_accepted_invitation_blocked(self):
+        """Cannot decline an invitation that was already accepted."""
+        accepted_inv = self._make_invitation(
+            acceptedAt=datetime(2025, 6, 15, tzinfo=timezone.utc),
+        )
+
+        declining_user = MagicMock()
+        declining_user.email = accepted_inv.email
+
+        with (
+            patch(
+                "backend.api.features.orgs.invitation_routes.prisma"
+            ) as mock_prisma,
+        ):
+            mock_prisma.orginvitation.find_unique = AsyncMock(
+                return_value=accepted_inv
+            )
+            mock_prisma.user.find_unique = AsyncMock(return_value=declining_user)
+
+            from backend.api.features.orgs.invitation_routes import (
+                decline_invitation,
+            )
+
+            with pytest.raises(HTTPException) as exc_info:
+                await decline_invitation(
+                    token=accepted_inv.token, user_id=USER_ID
+                )
+            assert exc_info.value.status_code == 400
+
+    # ------------------------------------------------------------------
+    # 3. decline_invitation doesn't check if already revoked
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason="Review: decline_invitation doesn't check if already revoked"
+    )
+    async def test_decline_already_revoked_invitation_blocked(self):
+        """Cannot decline an invitation that was already revoked."""
+        revoked_inv = self._make_invitation(
+            revokedAt=datetime(2025, 6, 15, tzinfo=timezone.utc),
+        )
+
+        declining_user = MagicMock()
+        declining_user.email = revoked_inv.email
+
+        with (
+            patch(
+                "backend.api.features.orgs.invitation_routes.prisma"
+            ) as mock_prisma,
+        ):
+            mock_prisma.orginvitation.find_unique = AsyncMock(
+                return_value=revoked_inv
+            )
+            mock_prisma.user.find_unique = AsyncMock(return_value=declining_user)
+
+            from backend.api.features.orgs.invitation_routes import (
+                decline_invitation,
+            )
+
+            with pytest.raises(HTTPException) as exc_info:
+                await decline_invitation(
+                    token=revoked_inv.token, user_id=USER_ID
+                )
+            assert exc_info.value.status_code == 400
+
+    # ------------------------------------------------------------------
+    # 4. join_team doesn't verify ctx.org_id == path org_id
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason="Review: join_team doesn't verify ctx.org_id == path org_id"
+    )
+    async def test_join_team_rejects_mismatched_org_id(self):
+        """join_team route should reject when ctx.org_id != path org_id."""
+        ctx = self._owner_ctx(org_id="org-A")
+
+        from backend.api.features.orgs.team_routes import join_team
+
+        # Call with a different org_id in the path
+        with pytest.raises(HTTPException) as exc_info:
+            await join_team(org_id="org-B", ws_id="ws-1", ctx=ctx)
+        assert exc_info.value.status_code == 403
+
+    # ------------------------------------------------------------------
+    # 5. leave_team doesn't verify ctx.org_id == path org_id
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason="Review: leave_team doesn't verify ctx.org_id == path org_id"
+    )
+    async def test_leave_team_rejects_mismatched_org_id(self):
+        """leave_team route should reject when ctx.org_id != path org_id."""
+        ctx = self._owner_ctx(org_id="org-A")
+
+        from backend.api.features.orgs.team_routes import leave_team
+
+        with pytest.raises(HTTPException) as exc_info:
+            await leave_team(org_id="org-B", ws_id="ws-1", ctx=ctx)
+        assert exc_info.value.status_code == 403
+
+    # ------------------------------------------------------------------
+    # 6. update_team ctx.team_id / ws_id mismatch
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason="Review: team admin can mutate other teams via "
+        "path/header mismatch"
+    )
+    async def test_update_team_rejects_mismatched_team_id(self):
+        """PATCH /teams/{ws_id} should reject when ctx.team_id != ws_id."""
+        from backend.api.features.orgs.team_model import UpdateTeamRequest
+        from backend.api.features.orgs.team_routes import update_team
+
+        ctx = self._owner_ctx(org_id="org-review-1", team_id="team-1")
+
+        # Mock the team_db.get_team call that validates org ownership
+        with patch(
+            "backend.api.features.orgs.team_routes.team_db.get_team",
+            new_callable=AsyncMock,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await update_team(
+                    org_id="org-review-1",
+                    ws_id="team-2",  # different from ctx.team_id
+                    request=UpdateTeamRequest(name="Hacked"),
+                    ctx=ctx,
+                )
+            assert exc_info.value.status_code == 403
+
+    # ------------------------------------------------------------------
+    # 7. reject_transfer has no org membership check
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason="Review: reject_transfer has no org membership check"
+    )
+    async def test_reject_transfer_requires_org_membership(self):
+        """Only source or target org members can reject a transfer."""
+        transfer = self._make_transfer(
+            sourceOrganizationId="org-A",
+            targetOrganizationId="org-B",
+        )
+
+        with patch(
+            "backend.api.features.transfers.db.prisma"
+        ) as mock_prisma:
+            mock_prisma.transferrequest.find_unique = AsyncMock(
+                return_value=transfer
+            )
+
+            from backend.api.features.transfers.db import reject_transfer
+
+            # User from org-C (not a party to the transfer) should be denied
+            with pytest.raises((ValueError, HTTPException)):
+                await reject_transfer(
+                    transfer_id="tr-review-1",
+                    user_id="user-org-c",
+                    org_id="org-C",
+                )
+
+    # ------------------------------------------------------------------
+    # 8. update_org doesn't sync OrganizationProfile on rename
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason="Review: update_org doesn't sync OrganizationProfile on rename"
+    )
+    async def test_update_org_syncs_profile_on_rename(self):
+        """When org name or slug changes, OrganizationProfile should be
+        updated too."""
+        from backend.api.features.orgs.model import UpdateOrgData
+
+        old_org = self._make_org(id="org-1", slug="old-slug", name="Old Name")
+        updated_org = self._make_org(
+            id="org-1", slug="new-slug", name="New Name"
+        )
+        updated_org.Members = [MagicMock()]
+
+        with patch(
+            "backend.api.features.orgs.db.prisma"
+        ) as mock_prisma:
+            mock_prisma.organization.find_unique = AsyncMock(
+                side_effect=[
+                    None,  # slug uniqueness check
+                    None,  # alias uniqueness check -> not an org
+                    old_org,  # old org lookup for alias creation
+                    updated_org,  # get_org call at end
+                ]
+            )
+            mock_prisma.organizationalias.find_unique = AsyncMock(
+                return_value=None
+            )
+            mock_prisma.organizationalias.create = AsyncMock()
+            mock_prisma.organization.update = AsyncMock()
+            mock_prisma.organizationprofile.update = AsyncMock()
+            mock_prisma.orgmember.count = AsyncMock(return_value=1)
+
+            from backend.api.features.orgs.db import update_org
+
+            await update_org(
+                "org-1",
+                UpdateOrgData(name="New Name", slug="new-slug"),
+            )
+
+            # The key assertion: profile must have been updated
+            mock_prisma.organizationprofile.update.assert_called_once()
+            call_kwargs = (
+                mock_prisma.organizationprofile.update.call_args.kwargs
+            )
+            assert call_kwargs["where"] == {"organizationId": "org-1"}
+            assert call_kwargs["data"]["displayName"] == "New Name"
+            assert call_kwargs["data"]["username"] == "new-slug"
+
+    # ------------------------------------------------------------------
+    # 9. approve_transfer sets COMPLETED before resource is moved
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason="Review: approve_transfer sets COMPLETED before resource is "
+        "moved"
+    )
+    async def test_approve_transfer_does_not_set_completed(self):
+        """approve_transfer should NOT set status=COMPLETED -- only execute
+        should."""
+        # Simulate a transfer where source already approved, target now
+        # approves -- both sides done.
+        source_approved = self._make_transfer(
+            status="SOURCE_APPROVED",
+            sourceApprovedByUserId=USER_ID,
+        )
+
+        update_capture: dict = {}
+
+        async def capture_update(*, where, data):
+            update_capture.update(data)
+            result = self._make_transfer(
+                status=data.get("status", "SOURCE_APPROVED"),
+                sourceApprovedByUserId=USER_ID,
+                targetApprovedByUserId="user-target",
+            )
+            return result
+
+        with patch(
+            "backend.api.features.transfers.db.prisma"
+        ) as mock_prisma:
+            mock_prisma.transferrequest.find_unique = AsyncMock(
+                return_value=source_approved
+            )
+            mock_prisma.transferrequest.update = AsyncMock(
+                side_effect=capture_update
+            )
+
+            from backend.api.features.transfers.db import approve_transfer
+
+            result = await approve_transfer(
+                transfer_id="tr-review-1",
+                user_id="user-target",
+                org_id="org-B",
+            )
+
+        # After both approvals, status must NOT be COMPLETED.
+        # It should remain in a waiting state until execute_transfer runs.
+        assert result.status != "COMPLETED", (
+            "approve_transfer should not set status to COMPLETED; "
+            "only execute_transfer should do that"
+        )
