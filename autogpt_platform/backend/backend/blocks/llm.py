@@ -777,13 +777,19 @@ def extract_openrouter_cost(response) -> float | None:
 
     OpenRouter returns the per-request USD cost in a response header. The
     OpenAI SDK exposes the raw httpx response via an undocumented `_response`
-    attribute. If the SDK ever drops or renames that attribute, we silently
-    degrade to no cost tracking rather than raising.
+    attribute. We use try/except AttributeError so that if the SDK ever drops
+    or renames that attribute, the warning is visible in logs rather than
+    silently degrading to no cost tracking.
     """
     try:
-        raw_resp = getattr(response, "_response", None)
-        if raw_resp is None or not hasattr(raw_resp, "headers"):
-            return None
+        raw_resp = response._response  # type: ignore[attr-defined]
+    except AttributeError:
+        logger.warning(
+            "OpenAI SDK response missing _response attribute"
+            " — OpenRouter cost tracking unavailable"
+        )
+        return None
+    try:
         cost_header = raw_resp.headers.get("x-total-cost")
         if not cost_header:
             return None

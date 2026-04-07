@@ -49,6 +49,11 @@ export function usePlatformCostContent(searchParams: InitialSearchParams) {
   const [userInput, setUserInput] = useState(userFilter);
 
   useEffect(() => {
+    // Fetching is triggered only on URL param changes (user-driven navigation),
+    // so rapid re-fetches are naturally debounced by the URL update cycle.
+    // React Query is not used here because this component calls 'use server'
+    // actions that run server-side (withRoleAccess wrapping); React Query hooks
+    // from Orval are browser-only and cannot enforce server-side role checks.
     async function load() {
       setLoading(true);
       setError(null);

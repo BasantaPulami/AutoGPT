@@ -86,10 +86,16 @@ async def log_platform_cost(entry: PlatformCostEntry) -> None:
     )
 
 
+# Bound the number of concurrent cost-log DB inserts to prevent unbounded
+# task/connection growth under sustained load or DB slowness.
+_log_semaphore = asyncio.Semaphore(50)
+
+
 async def log_platform_cost_safe(entry: PlatformCostEntry) -> None:
     """Fire-and-forget wrapper that never raises."""
     try:
-        await log_platform_cost(entry)
+        async with _log_semaphore:
+            await log_platform_cost(entry)
     except Exception:
         logger.exception(
             "Failed to log platform cost for user=%s provider=%s block=%s",
@@ -101,12 +107,8 @@ async def log_platform_cost_safe(entry: PlatformCostEntry) -> None:
 
 # Hold strong references to in-flight log tasks to prevent GC.
 # Tasks remove themselves on completion via add_done_callback.
-#
-# NOTE: this set is intentionally unbounded. Under sustained high load or DB
-# slowness the set could grow without limit. Adding a bounded asyncio.Semaphore
-# would provide back-pressure but is deferred until we observe memory pressure
-# in production. The set is small in practice because log inserts are fast
-# (sub-millisecond on a healthy DB).
+# Concurrent DB inserts are bounded by _log_semaphore (50) to provide
+# back-pressure under high load or DB slowness.
 _pending_log_tasks: set["asyncio.Task[None]"] = set()
 
 
@@ -139,6 +141,23 @@ def _json_or_none(data: dict[str, Any] | None) -> str | None:
     if data is None:
         return None
     return json.dumps(data)
+
+
+def _mask_email(email: str | None) -> str | None:
+    """Mask an email address to reduce PII exposure in admin API responses.
+
+    Turns 'user@example.com' into 'us***@example.com'.
+    Handles short local parts gracefully (e.g. 'a@b.com' → 'a***@b.com').
+    """
+    if not email:
+        return email
+    at = email.find("@")
+    if at < 0:
+        return "***"
+    local = email[:at]
+    domain = email[at:]
+    visible = local[:2] if len(local) >= 2 else local[:1]
+    return f"{visible}***{domain}"
 
 
 class ProviderCostSummary(BaseModel):
@@ -304,7 +323,7 @@ async def get_platform_cost_dashboard(
         by_user=[
             UserCostSummary(
                 user_id=r.get("user_id"),
-                email=r.get("email"),
+                email=_mask_email(r.get("email")),
                 total_cost_microdollars=r["total_cost"],
                 total_input_tokens=r["total_input_tokens"],
                 total_output_tokens=r["total_output_tokens"],
@@ -378,7 +397,7 @@ async def get_platform_cost_logs(
             id=r["id"],
             created_at=r["created_at"],
             user_id=r.get("user_id"),
-            email=r.get("email"),
+            email=_mask_email(r.get("email")),
             graph_exec_id=r.get("graph_exec_id"),
             node_exec_id=r.get("node_exec_id"),
             block_name=r["block_name"],
