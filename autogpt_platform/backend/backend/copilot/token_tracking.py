@@ -144,23 +144,14 @@ async def persist_and_record_usage(
 
     if cache_read_tokens or cache_creation_tokens:
         logger.info(
-            "%s Turn usage: uncached=%d, cache_read=%d, cache_create=%d,"
-            " output=%d, total=%d, cost_usd=%s",
-            log_prefix,
-            prompt_tokens,
-            cache_read_tokens,
-            cache_creation_tokens,
-            completion_tokens,
-            total_tokens,
-            cost_usd,
+            f"{log_prefix} Turn usage: uncached={prompt_tokens}, cache_read={cache_read_tokens},"
+            f" cache_create={cache_creation_tokens}, output={completion_tokens},"
+            f" total={total_tokens}, cost_usd={cost_usd}"
         )
     else:
         logger.info(
-            "%s Turn usage: prompt=%d, completion=%d, total=%d",
-            log_prefix,
-            prompt_tokens,
-            completion_tokens,
-            total_tokens,
+            f"{log_prefix} Turn usage: prompt={prompt_tokens}, completion={completion_tokens},"
+            f" total={total_tokens}"
         )
 
     if user_id:

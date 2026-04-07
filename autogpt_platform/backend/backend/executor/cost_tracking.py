@@ -6,6 +6,10 @@ import threading
 from typing import TYPE_CHECKING, Any, cast
 
 from backend.blocks._base import Block, BlockSchema
+from backend.copilot.token_tracking import _pending_log_tasks as _copilot_tasks
+from backend.copilot.token_tracking import (
+    _pending_log_tasks_lock as _copilot_tasks_lock,
+)
 from backend.data.execution import NodeExecutionEntry
 from backend.data.model import NodeExecutionStats
 from backend.data.platform_cost import PlatformCostEntry, usd_to_microdollars
@@ -83,13 +87,6 @@ async def drain_pending_cost_logs(timeout: float = 5.0) -> None:
                 timeout,
             )
     # Also drain copilot cost log tasks (token_tracking._pending_log_tasks)
-    from backend.copilot.token_tracking import (  # noqa: PLC0415
-        _pending_log_tasks as _copilot_tasks,
-    )
-    from backend.copilot.token_tracking import (  # noqa: PLC0415
-        _pending_log_tasks_lock as _copilot_tasks_lock,
-    )
-
     with _copilot_tasks_lock:
         copilot_pending = [t for t in _copilot_tasks if t.get_loop() is current_loop]
     if copilot_pending:
@@ -286,7 +283,7 @@ async def log_system_credential_cost(
                     model=model_name,
                     tracking_type=tracking_type,
                     tracking_amount=tracking_amount,
-                    metadata=meta or None,
+                    metadata=meta,
                 ),
             )
             return  # One log per execution is enough

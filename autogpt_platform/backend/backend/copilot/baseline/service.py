@@ -445,7 +445,7 @@ async def _baseline_llm_caller(
                     cost = float(cost_header)
                     if math.isfinite(cost):
                         state.cost_usd = (state.cost_usd or 0.0) + max(0.0, cost)
-        except (ValueError, AttributeError, UnboundLocalError):
+        except (ValueError, AttributeError):
             pass
 
         # Always persist partial text so the session history stays consistent,
