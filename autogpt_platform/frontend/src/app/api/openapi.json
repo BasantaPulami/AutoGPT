@@ -1059,9 +1059,22 @@
       "post": {
         "tags": ["v2", "chat", "chat"],
         "summary": "Create Session",
-        "description": "Create a new chat session.\n\nInitiates a new chat session for the authenticated user.\n\nArgs:\n    user_id: The authenticated user ID parsed from the JWT (required).\n\nReturns:\n    CreateSessionResponse: Details of the created session.",
+        "description": "Create a new chat session.\n\nInitiates a new chat session for the authenticated user.\n\nArgs:\n    user_id: The authenticated user ID parsed from the JWT (required).\n    request: Optional request body. When provided, ``dry_run=True``\n        forces run_block and run_agent calls to use dry-run simulation.\n\nReturns:\n    CreateSessionResponse: Details of the created session.",
         "operationId": "postV2CreateSession",
         "security": [{ "HTTPBearerJWT": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  { "$ref": "#/components/schemas/CreateSessionRequest" },
+                  { "type": "null" }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1075,6 +1088,14 @@
           },
           "401": {
             "$ref": "#/components/responses/HTTP401NotAuthenticatedError"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
           }
         }
       }
@@ -1386,7 +1407,7 @@
       "get": {
         "tags": ["v2", "chat", "chat"],
         "summary": "Get Copilot Usage",
-        "description": "Get CoPilot usage status for the authenticated user.\n\nReturns current token usage vs limits for daily and weekly windows.\nGlobal defaults sourced from LaunchDarkly (falling back to config).",
+        "description": "Get CoPilot usage status for the authenticated user.\n\nReturns current token usage vs limits for daily and weekly windows.\nGlobal defaults sourced from LaunchDarkly (falling back to config).\nIncludes the user's rate-limit tier.",
         "operationId": "getV2GetCopilotUsage",
         "responses": {
           "200": {
@@ -1530,6 +1551,128 @@
           }
         },
         "security": [{ "HTTPBearerJWT": [] }]
+      }
+    },
+    "/api/copilot/admin/rate_limit/search_users": {
+      "get": {
+        "tags": ["v2", "admin", "copilot", "admin"],
+        "summary": "Search Users by Name or Email",
+        "description": "Search users by partial email or name. Admin-only.\n\nQueries the User table directly — returns results even for users\nwithout credit transaction history.",
+        "operationId": "getV2Search users by name or email",
+        "security": [{ "HTTPBearerJWT": [] }],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Query" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 20, "title": "Limit" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/UserSearchResult" },
+                  "title": "Response Getv2Search Users By Name Or Email"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401NotAuthenticatedError"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/copilot/admin/rate_limit/tier": {
+      "get": {
+        "tags": ["v2", "admin", "copilot", "admin"],
+        "summary": "Get User Rate Limit Tier",
+        "description": "Get a user's current rate-limit tier. Admin-only.\n\nReturns 404 if the user does not exist in the database.",
+        "operationId": "getV2Get user rate limit tier",
+        "security": [{ "HTTPBearerJWT": [] }],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "User Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserTierResponse" }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401NotAuthenticatedError"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["v2", "admin", "copilot", "admin"],
+        "summary": "Set User Rate Limit Tier",
+        "description": "Set a user's rate-limit tier. Admin-only.\n\nReturns 404 if the user does not exist in the database.",
+        "operationId": "postV2Set user rate limit tier",
+        "security": [{ "HTTPBearerJWT": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SetUserTierRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserTierResponse" }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401NotAuthenticatedError"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
       }
     },
     "/api/credits": {
@@ -5327,11 +5470,11 @@
         "security": [{ "HTTPBearerJWT": [] }]
       }
     },
-    "/api/onboarding/enabled": {
+    "/api/onboarding/completed": {
       "get": {
         "tags": ["v1", "onboarding", "public"],
-        "summary": "Is onboarding enabled",
-        "operationId": "getV1Is onboarding enabled",
+        "summary": "Check if onboarding is completed",
+        "operationId": "getV1Check if onboarding is completed",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5345,6 +5488,41 @@
           },
           "401": {
             "$ref": "#/components/responses/HTTP401NotAuthenticatedError"
+          }
+        },
+        "security": [{ "HTTPBearerJWT": [] }]
+      }
+    },
+    "/api/onboarding/profile": {
+      "post": {
+        "tags": ["v1", "onboarding"],
+        "summary": "Submit onboarding profile",
+        "operationId": "postV1Submit onboarding profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardingProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401NotAuthenticatedError"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
           }
         },
         "security": [{ "HTTPBearerJWT": [] }]
@@ -6863,12 +7041,76 @@
         }
       }
     },
+    "/api/workspace/files": {
+      "get": {
+        "tags": ["workspace"],
+        "summary": "List workspace files",
+        "description": "List files in the user's workspace.\n\nWhen session_id is provided, only files for that session are returned.\nOtherwise, all files across sessions are listed. Results are paginated\nvia `limit`/`offset`; `has_more` indicates whether additional pages exist.",
+        "operationId": "listWorkspaceFiles",
+        "security": [{ "HTTPBearerJWT": [] }],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [{ "type": "string" }, { "type": "null" }],
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListFilesResponse" }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401NotAuthenticatedError"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspace/files/upload": {
       "post": {
         "tags": ["workspace"],
         "summary": "Upload file to workspace",
         "description": "Upload a file to the user's workspace.\n\nFiles are stored in session-scoped paths when session_id is provided,\nso the agent's session-scoped tools can discover them automatically.",
-        "operationId": "postWorkspaceUpload file to workspace",
+        "operationId": "uploadWorkspaceFile",
         "security": [{ "HTTPBearerJWT": [] }],
         "parameters": [
           {
@@ -6896,7 +7138,7 @@
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_postWorkspaceUpload_file_to_workspace"
+                "$ref": "#/components/schemas/Body_uploadWorkspaceFile"
               }
             }
           }
@@ -6931,7 +7173,7 @@
         "tags": ["workspace"],
         "summary": "Delete a workspace file",
         "description": "Soft-delete a workspace file and attempt to remove it from storage.\n\nUsed when a user clears a file input in the builder.",
-        "operationId": "deleteWorkspaceDelete a workspace file",
+        "operationId": "deleteWorkspaceFile",
         "security": [{ "HTTPBearerJWT": [] }],
         "parameters": [
           {
@@ -6969,7 +7211,7 @@
         "tags": ["workspace"],
         "summary": "Download file by ID",
         "description": "Download a file by its ID.\n\nReturns the file content directly or redirects to a signed URL for GCS.",
-        "operationId": "getWorkspaceDownload file by id",
+        "operationId": "getWorkspaceDownloadFileById",
         "security": [{ "HTTPBearerJWT": [] }],
         "parameters": [
           {
@@ -7003,7 +7245,7 @@
         "tags": ["workspace"],
         "summary": "Get workspace storage usage",
         "description": "Get storage usage information for the user's workspace.",
-        "operationId": "getWorkspaceGet workspace storage usage",
+        "operationId": "getWorkspaceStorageUsage",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7439,6 +7681,13 @@
             ],
             "title": "Inputs",
             "description": "Input schema for the agent, including field names, types, and defaults"
+          },
+          "graph": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/BaseGraph-Output" },
+              { "type": "null" }
+            ],
+            "description": "Full graph structure (nodes + links) when include_graph is requested"
           }
         },
         "type": "object",
@@ -8314,13 +8563,13 @@
         "required": ["file"],
         "title": "Body_postV2Upload submission media"
       },
-      "Body_postWorkspaceUpload_file_to_workspace": {
+      "Body_uploadWorkspaceFile": {
         "properties": {
           "file": { "type": "string", "format": "binary", "title": "File" }
         },
         "type": "object",
         "required": ["file"],
-        "title": "Body_postWorkspaceUpload file to workspace"
+        "title": "Body_uploadWorkspaceFile"
       },
       "BulkMoveAgentsRequest": {
         "properties": {
@@ -8385,6 +8634,14 @@
         "required": ["query", "conversation_history", "message_id"],
         "title": "ChatRequest"
       },
+      "ChatSessionMetadata": {
+        "properties": {
+          "dry_run": { "type": "boolean", "title": "Dry Run", "default": false }
+        },
+        "type": "object",
+        "title": "ChatSessionMetadata",
+        "description": "Typed metadata stored in the ``metadata`` JSON column of ChatSession.\n\nAdd new session-level flags here instead of adding DB columns —\nno migration required for new fields as long as a default is provided."
+      },
       "ClarificationNeededResponse": {
         "properties": {
           "type": {
@@ -8425,6 +8682,10 @@
         "properties": {
           "daily": { "$ref": "#/components/schemas/UsageWindow" },
           "weekly": { "$ref": "#/components/schemas/UsageWindow" },
+          "tier": {
+            "$ref": "#/components/schemas/SubscriptionTier",
+            "default": "FREE"
+          },
           "reset_cost": {
             "type": "integer",
             "title": "Reset Cost",
@@ -8514,6 +8775,15 @@
         "required": ["graph"],
         "title": "CreateGraph"
       },
+      "CreateSessionRequest": {
+        "properties": {
+          "dry_run": { "type": "boolean", "title": "Dry Run", "default": false }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CreateSessionRequest",
+        "description": "Request model for creating a new chat session.\n\n``dry_run`` is a **top-level** field — do not nest it inside ``metadata``.\nExtra/unknown fields are rejected (422) to prevent silent mis-use."
+      },
       "CreateSessionResponse": {
         "properties": {
           "id": { "type": "string", "title": "Id" },
@@ -8521,6 +8791,10 @@
           "user_id": {
             "anyOf": [{ "type": "string" }, { "type": "null" }],
             "title": "User Id"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/ChatSessionMetadata",
+            "default": { "dry_run": false }
           }
         },
         "type": "object",
@@ -10482,6 +10756,24 @@
         "required": ["source_id", "sink_id", "source_name", "sink_name"],
         "title": "Link"
       },
+      "ListFilesResponse": {
+        "properties": {
+          "files": {
+            "items": { "$ref": "#/components/schemas/WorkspaceFileItem" },
+            "type": "array",
+            "title": "Files"
+          },
+          "offset": { "type": "integer", "title": "Offset", "default": 0 },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": ["files"],
+        "title": "ListFilesResponse"
+      },
       "ListSessionsResponse": {
         "properties": {
           "sessions": {
@@ -11140,18 +11432,40 @@
         "title": "OAuthApplicationPublicInfo",
         "description": "Public information about an OAuth application (for consent screen)"
       },
-      "OnboardingStatusResponse": {
+      "OnboardingProfileRequest": {
         "properties": {
-          "is_onboarding_enabled": {
-            "type": "boolean",
-            "title": "Is Onboarding Enabled"
+          "user_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "User Name"
           },
-          "is_chat_enabled": { "type": "boolean", "title": "Is Chat Enabled" }
+          "user_role": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "User Role"
+          },
+          "pain_points": {
+            "items": { "type": "string" },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Pain Points"
+          }
         },
         "type": "object",
-        "required": ["is_onboarding_enabled", "is_chat_enabled"],
+        "required": ["user_name", "user_role"],
+        "title": "OnboardingProfileRequest",
+        "description": "Request body for onboarding profile submission."
+      },
+      "OnboardingStatusResponse": {
+        "properties": {
+          "is_completed": { "type": "boolean", "title": "Is Completed" }
+        },
+        "type": "object",
+        "required": ["is_completed"],
         "title": "OnboardingStatusResponse",
-        "description": "Response for onboarding status check."
+        "description": "Response for onboarding completion check."
       },
       "OnboardingStep": {
         "type": "string",
@@ -12139,6 +12453,10 @@
             "type": "integer",
             "title": "Total Completion Tokens",
             "default": 0
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/ChatSessionMetadata",
+            "default": { "dry_run": false }
           }
         },
         "type": "object",
@@ -12172,6 +12490,15 @@
         "type": "object",
         "required": ["active_graph_version"],
         "title": "SetGraphActiveVersion"
+      },
+      "SetUserTierRequest": {
+        "properties": {
+          "user_id": { "type": "string", "title": "User Id" },
+          "tier": { "$ref": "#/components/schemas/SubscriptionTier" }
+        },
+        "type": "object",
+        "required": ["user_id", "tier"],
+        "title": "SetUserTierRequest"
       },
       "SetupInfo": {
         "properties": {
@@ -12930,6 +13257,14 @@
               { "type": "null" }
             ],
             "title": "File Ids"
+          },
+          "mode": {
+            "anyOf": [
+              { "type": "string", "enum": ["fast", "extended_thinking"] },
+              { "type": "null" }
+            ],
+            "title": "Mode",
+            "description": "Autopilot mode: 'fast' for baseline LLM, 'extended_thinking' for Claude Agent SDK. If None, uses the server default (extended_thinking)."
           }
         },
         "type": "object",
@@ -12941,6 +13276,12 @@
         "type": "string",
         "enum": ["DRAFT", "PENDING", "APPROVED", "REJECTED"],
         "title": "SubmissionStatus"
+      },
+      "SubscriptionTier": {
+        "type": "string",
+        "enum": ["FREE", "PRO", "BUSINESS", "ENTERPRISE"],
+        "title": "SubscriptionTier",
+        "description": "Subscription tiers with increasing token allowances.\n\nMirrors the ``SubscriptionTier`` enum in ``schema.prisma``.\nOnce ``prisma generate`` is run, this can be replaced with::\n\n    from prisma.enums import SubscriptionTier"
       },
       "SuggestedGoalResponse": {
         "properties": {
@@ -14770,7 +15111,8 @@
           "weekly_tokens_used": {
             "type": "integer",
             "title": "Weekly Tokens Used"
-          }
+          },
+          "tier": { "$ref": "#/components/schemas/SubscriptionTier" }
         },
         "type": "object",
         "required": [
@@ -14778,7 +15120,8 @@
           "daily_token_limit",
           "weekly_token_limit",
           "daily_tokens_used",
-          "weekly_tokens_used"
+          "weekly_tokens_used",
+          "tier"
         ],
         "title": "UserRateLimitResponse"
       },
@@ -14804,6 +15147,27 @@
         "type": "object",
         "title": "UserReadiness",
         "description": "User readiness status."
+      },
+      "UserSearchResult": {
+        "properties": {
+          "user_id": { "type": "string", "title": "User Id" },
+          "user_email": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "User Email"
+          }
+        },
+        "type": "object",
+        "required": ["user_id"],
+        "title": "UserSearchResult"
+      },
+      "UserTierResponse": {
+        "properties": {
+          "user_id": { "type": "string", "title": "User Id" },
+          "tier": { "$ref": "#/components/schemas/SubscriptionTier" }
+        },
+        "type": "object",
+        "required": ["user_id", "tier"],
+        "title": "UserTierResponse"
       },
       "UserTransaction": {
         "properties": {
@@ -14936,6 +15300,31 @@
           "url"
         ],
         "title": "Webhook"
+      },
+      "WorkspaceFileItem": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "name": { "type": "string", "title": "Name" },
+          "path": { "type": "string", "title": "Path" },
+          "mime_type": { "type": "string", "title": "Mime Type" },
+          "size_bytes": { "type": "integer", "title": "Size Bytes" },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          },
+          "created_at": { "type": "string", "title": "Created At" }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "path",
+          "mime_type",
+          "size_bytes",
+          "created_at"
+        ],
+        "title": "WorkspaceFileItem"
       },
       "backend__api__features__workspace__routes__UploadFileResponse": {
         "properties": {
