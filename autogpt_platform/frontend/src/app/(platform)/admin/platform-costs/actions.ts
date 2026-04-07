@@ -1,5 +1,3 @@
-"use server";
-
 import {
   getV2GetPlatformCostDashboard,
   getV2GetPlatformCostLogs,

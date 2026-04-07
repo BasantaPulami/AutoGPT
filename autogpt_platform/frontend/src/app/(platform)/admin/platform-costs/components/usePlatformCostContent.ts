@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { PlatformCostDashboard } from "@/app/api/__generated__/models/platformCostDashboard";
-import type { CostLogRow } from "@/app/api/__generated__/models/costLogRow";
-import type { Pagination } from "@/app/api/__generated__/models/pagination";
-import type { PlatformCostLogsResponse } from "@/app/api/__generated__/models/platformCostLogsResponse";
-import { getPlatformCostDashboard, getPlatformCostLogs } from "../actions";
+import { useState } from "react";
+import {
+  useGetV2GetPlatformCostDashboard,
+  useGetV2GetPlatformCostLogs,
+} from "@/app/api/__generated__/endpoints/admin/admin";
+import { okData } from "@/app/api/helpers";
 import { estimateCostForRow, toLocalInput, toUtcIso } from "../helpers";
 
 interface InitialSearchParams {
@@ -22,19 +22,6 @@ export function usePlatformCostContent(searchParams: InitialSearchParams) {
   const router = useRouter();
   const urlParams = useSearchParams();
 
-  const [dashboard, setDashboard] = useState<PlatformCostDashboard | null>(
-    null,
-  );
-  const [logs, setLogs] = useState<CostLogRow[]>([]);
-  const [pagination, setPagination] = useState<Pagination | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // Rate overrides keyed on `${provider}:${tracking_type}` so the same
-  // provider can have independent rates per billing model.
-  const [rateOverrides, setRateOverrides] = useState<Record<string, number>>(
-    {},
-  );
-
   const tab = urlParams.get("tab") || searchParams.tab || "overview";
   const page = parseInt(urlParams.get("page") || searchParams.page || "1", 10);
   const startDate = urlParams.get("start") || searchParams.start || "";
@@ -47,55 +34,47 @@ export function usePlatformCostContent(searchParams: InitialSearchParams) {
   const [endInput, setEndInput] = useState(toLocalInput(endDate));
   const [providerInput, setProviderInput] = useState(providerFilter);
   const [userInput, setUserInput] = useState(userFilter);
+  const [rateOverrides, setRateOverrides] = useState<Record<string, number>>(
+    {},
+  );
 
-  useEffect(() => {
-    // Fetching is triggered only on URL param changes (user-driven navigation),
-    // so rapid re-fetches are naturally debounced by the URL update cycle.
-    // React Query is not used here because this component calls 'use server'
-    // actions that run server-side (withRoleAccess wrapping); React Query hooks
-    // from Orval are browser-only and cannot enforce server-side role checks.
-    async function load() {
-      setLoading(true);
-      setError(null);
-      const filters: Record<string, string> = {};
-      if (startDate) filters.start = startDate;
-      if (endDate) filters.end = endDate;
-      if (providerFilter) filters.provider = providerFilter;
-      if (userFilter) filters.user_id = userFilter;
+  // Pass ISO date strings through `as unknown as Date` so Orval's URL builder
+  // forwards them as-is. Date.toString() produces a format FastAPI rejects;
+  // strings pass through .toString() unchanged.
+  const filterParams = {
+    start: (startDate || undefined) as unknown as Date | undefined,
+    end: (endDate || undefined) as unknown as Date | undefined,
+    provider: providerFilter || undefined,
+    user_id: userFilter || undefined,
+  };
 
-      const [dashResult, logsResult] = await Promise.allSettled([
-        getPlatformCostDashboard(filters),
-        getPlatformCostLogs({ ...filters, page, page_size: 50 }),
-      ]);
+  const {
+    data: dashboard,
+    isLoading: dashLoading,
+    error: dashError,
+  } = useGetV2GetPlatformCostDashboard(filterParams, {
+    query: { select: okData },
+  });
 
-      if (dashResult.status === "fulfilled") {
-        if (dashResult.value) setDashboard(dashResult.value);
-      } else {
-        setError(
-          dashResult.reason instanceof Error
-            ? dashResult.reason.message
-            : "Failed to load dashboard data",
-        );
-      }
+  const {
+    data: logsResponse,
+    isLoading: logsLoading,
+    error: logsError,
+  } = useGetV2GetPlatformCostLogs(
+    { ...filterParams, page, page_size: 50 },
+    { query: { select: okData } },
+  );
 
-      if (logsResult.status === "fulfilled") {
-        const logsData = logsResult.value as PlatformCostLogsResponse | null;
-        if (logsData) {
-          setLogs(logsData.logs || []);
-          setPagination(logsData.pagination || null);
-        }
-      } else {
-        setError(
-          logsResult.reason instanceof Error
-            ? logsResult.reason.message
-            : "Failed to load logs data",
-        );
-      }
-
-      setLoading(false);
-    }
-    load();
-  }, [startDate, endDate, providerFilter, userFilter, page]);
+  const loading = dashLoading || logsLoading;
+  const error = dashError
+    ? dashError instanceof Error
+      ? dashError.message
+      : "Failed to load dashboard"
+    : logsError
+      ? logsError instanceof Error
+        ? logsError.message
+        : "Failed to load logs"
+      : null;
 
   function updateUrl(overrides: Record<string, string>) {
     const params = new URLSearchParams(urlParams.toString());
@@ -127,17 +106,14 @@ export function usePlatformCostContent(searchParams: InitialSearchParams) {
     }, 0) ?? 0;
 
   return {
-    // Data
-    dashboard,
-    logs,
-    pagination,
+    dashboard: dashboard ?? null,
+    logs: logsResponse?.logs ?? [],
+    pagination: logsResponse?.pagination ?? null,
     loading,
     error,
     totalEstimatedCost,
-    // URL state
     tab,
     page,
-    // Filter inputs (uncommitted)
     startInput,
     setStartInput,
     endInput,
@@ -146,10 +122,8 @@ export function usePlatformCostContent(searchParams: InitialSearchParams) {
     setProviderInput,
     userInput,
     setUserInput,
-    // Rate overrides
     rateOverrides,
     handleRateOverride,
-    // Actions
     updateUrl,
     handleFilter,
   };
