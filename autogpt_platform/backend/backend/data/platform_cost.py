@@ -153,7 +153,7 @@ class CostLogRow(BaseModel):
     email: str | None = None
     graph_exec_id: str | None = None
     node_exec_id: str | None = None
-    block_name: str
+    block_name: str | None = None
     provider: str
     tracking_type: str | None = None
     cost_microdollars: int | None = None
@@ -227,7 +227,7 @@ async def get_platform_cost_dashboard(
         start = datetime.now(timezone.utc) - timedelta(days=DEFAULT_DASHBOARD_DAYS)
     where_p, params_p = _build_where(start, end, provider, user_id, "p")
 
-    by_provider_rows, by_user_rows, total_user_rows = await asyncio.gather(
+    by_provider_rows, by_user_rows, total_user_rows, totals_rows = await asyncio.gather(
         query_raw_with_schema(
             f"""
             SELECT
@@ -273,13 +273,27 @@ async def get_platform_cost_dashboard(
             """,
             *params_p,
         ),
+        # Run an uncapped aggregate for the headline totals so they are never
+        # silently under-reported when >MAX_PROVIDER_ROWS groups exist.
+        query_raw_with_schema(
+            f"""
+            SELECT
+                COALESCE(SUM(p."costMicrodollars"), 0)::bigint AS total_cost,
+                COUNT(*)::bigint AS total_requests
+            FROM {{schema_prefix}}"PlatformCostLog" p
+            WHERE {where_p}
+            """,
+            *params_p,
+        ),
     )
 
     # Use the exact COUNT(DISTINCT userId) so total_users is not capped at
     # MAX_USER_ROWS (which would silently report 100 for >100 active users).
     total_users = int(total_user_rows[0]["cnt"]) if total_user_rows else 0
-    total_cost = sum(r["total_cost"] for r in by_provider_rows)
-    total_requests = sum(r["request_count"] for r in by_provider_rows)
+    # Use the uncapped aggregate totals to avoid under-reporting when there are
+    # more than MAX_PROVIDER_ROWS (provider, trackingType) groups.
+    total_cost = int(totals_rows[0]["total_cost"]) if totals_rows else 0
+    total_requests = int(totals_rows[0]["total_requests"]) if totals_rows else 0
 
     return PlatformCostDashboard(
         by_provider=[
@@ -320,6 +334,11 @@ async def get_platform_cost_logs(
     page: int = 1,
     page_size: int = 50,
 ) -> tuple[list[CostLogRow], int]:
+    if page < 1:
+        raise ValueError(f"page must be >= 1, got {page}")
+    if page_size < 1:
+        raise ValueError(f"page_size must be >= 1, got {page_size}")
+
     if start is None:
         start = datetime.now(tz=timezone.utc) - timedelta(days=DEFAULT_DASHBOARD_DAYS)
     where_sql, params = _build_where(start, end, provider, user_id, "p")
@@ -375,7 +394,7 @@ async def get_platform_cost_logs(
             email=_mask_email(r.get("email")),
             graph_exec_id=r.get("graph_exec_id"),
             node_exec_id=r.get("node_exec_id"),
-            block_name=r["block_name"],
+            block_name=r.get("block_name"),
             provider=r["provider"],
             tracking_type=r.get("tracking_type"),
             cost_microdollars=r.get("cost_microdollars"),
