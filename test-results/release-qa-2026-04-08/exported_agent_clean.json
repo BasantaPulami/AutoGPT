@@ -1,0 +1,226 @@
+{
+  "id": "b03c1125-1ecc-4326-a84d-52ca90c7f978",
+  "version": 3,
+  "is_active": true,
+  "name": "Hello World Agent",
+  "description": "A simple agent that takes a name as input and outputs 'Hello, [name]!' with the current date.",
+  "instructions": null,
+  "recommended_schedule_cron": null,
+  "forked_from_id": null,
+  "forked_from_version": null,
+  "user_id": "2fcceced-4abe-4879-906e-60d55b6ebcc8",
+  "created_at": "2026-04-08T15:50:29.892000Z",
+  "nodes": [
+    {
+      "id": "940857b5-5af0-4f5b-bbc4-25aa796feaa6",
+      "block_id": "b29c1b50-5d0e-4d9f-8f9d-1b0e6fcbf0b1",
+      "input_default": {
+        "offset": 0,
+        "trigger": "go",
+        "format_type": {
+          "format": "%Y-%m-%d",
+          "timezone": "UTC",
+          "discriminator": "strftime",
+          "use_user_timezone": false
+        }
+      },
+      "metadata": {
+        "position": {
+          "x": 0,
+          "y": 300
+        },
+        "customized_name": "Get Current Date"
+      },
+      "input_links": [],
+      "output_links": [
+        {
+          "id": "7e0a9389-77a9-4cf3-9f8d-f1af0c6e3390",
+          "source_id": "940857b5-5af0-4f5b-bbc4-25aa796feaa6",
+          "sink_id": "9af8c594-d629-4395-939e-8d21b413b866",
+          "source_name": "date",
+          "sink_name": "values_#_date",
+          "is_static": false
+        }
+      ],
+      "graph_id": "b03c1125-1ecc-4326-a84d-52ca90c7f978",
+      "graph_version": 3,
+      "webhook_id": null
+    },
+    {
+      "id": "9af8c594-d629-4395-939e-8d21b413b866",
+      "block_id": "db7d8f02-2f44-4c55-ab7a-eae0941f0c30",
+      "input_default": {
+        "format": "Hello, {{name}}! Today's date is {{date}}.",
+        "values": {},
+        "escape_html": false
+      },
+      "metadata": {
+        "position": {
+          "x": 800,
+          "y": 0
+        },
+        "customized_name": "Greeting Formatter"
+      },
+      "input_links": [
+        {
+          "id": "f7724f72-ae42-4f8f-ba4f-ac4d52a3608a",
+          "source_id": "219bd627-9038-4adc-94b5-397f0debf91b",
+          "sink_id": "9af8c594-d629-4395-939e-8d21b413b866",
+          "source_name": "result",
+          "sink_name": "values_#_name",
+          "is_static": true
+        },
+        {
+          "id": "7e0a9389-77a9-4cf3-9f8d-f1af0c6e3390",
+          "source_id": "940857b5-5af0-4f5b-bbc4-25aa796feaa6",
+          "sink_id": "9af8c594-d629-4395-939e-8d21b413b866",
+          "source_name": "date",
+          "sink_name": "values_#_date",
+          "is_static": false
+        }
+      ],
+      "output_links": [
+        {
+          "id": "4cd3625c-cd67-4171-9fab-e2214b3098e8",
+          "source_id": "9af8c594-d629-4395-939e-8d21b413b866",
+          "sink_id": "b28eb689-1035-46d5-9412-b88f25d76dfd",
+          "source_name": "output",
+          "sink_name": "value",
+          "is_static": false
+        }
+      ],
+      "graph_id": "b03c1125-1ecc-4326-a84d-52ca90c7f978",
+      "graph_version": 3,
+      "webhook_id": null
+    },
+    {
+      "id": "b28eb689-1035-46d5-9412-b88f25d76dfd",
+      "block_id": "363ae599-353e-4804-937e-b2ee3cef3da4",
+      "input_default": {
+        "name": "greeting",
+        "title": "Greeting",
+        "secret": false,
+        "advanced": false,
+        "description": "The greeting message",
+        "escape_html": false
+      },
+      "metadata": {
+        "position": {
+          "x": 1600,
+          "y": 0
+        },
+        "customized_name": "Output"
+      },
+      "input_links": [
+        {
+          "id": "4cd3625c-cd67-4171-9fab-e2214b3098e8",
+          "source_id": "9af8c594-d629-4395-939e-8d21b413b866",
+          "sink_id": "b28eb689-1035-46d5-9412-b88f25d76dfd",
+          "source_name": "output",
+          "sink_name": "value",
+          "is_static": false
+        }
+      ],
+      "output_links": [],
+      "graph_id": "b03c1125-1ecc-4326-a84d-52ca90c7f978",
+      "graph_version": 3,
+      "webhook_id": null
+    },
+    {
+      "id": "219bd627-9038-4adc-94b5-397f0debf91b",
+      "block_id": "c0a8e994-ebf1-4a9c-a4d8-89d09c86741b",
+      "input_default": {
+        "name": "name",
+        "title": "Your Name",
+        "secret": false,
+        "advanced": false,
+        "description": "Enter your name"
+      },
+      "metadata": {
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "customized_name": "Name Input"
+      },
+      "input_links": [],
+      "output_links": [
+        {
+          "id": "f7724f72-ae42-4f8f-ba4f-ac4d52a3608a",
+          "source_id": "219bd627-9038-4adc-94b5-397f0debf91b",
+          "sink_id": "9af8c594-d629-4395-939e-8d21b413b866",
+          "source_name": "result",
+          "sink_name": "values_#_name",
+          "is_static": true
+        }
+      ],
+      "graph_id": "b03c1125-1ecc-4326-a84d-52ca90c7f978",
+      "graph_version": 3,
+      "webhook_id": null
+    }
+  ],
+  "links": [
+    {
+      "id": "4cd3625c-cd67-4171-9fab-e2214b3098e8",
+      "source_id": "9af8c594-d629-4395-939e-8d21b413b866",
+      "sink_id": "b28eb689-1035-46d5-9412-b88f25d76dfd",
+      "source_name": "output",
+      "sink_name": "value",
+      "is_static": false
+    },
+    {
+      "id": "7e0a9389-77a9-4cf3-9f8d-f1af0c6e3390",
+      "source_id": "940857b5-5af0-4f5b-bbc4-25aa796feaa6",
+      "sink_id": "9af8c594-d629-4395-939e-8d21b413b866",
+      "source_name": "date",
+      "sink_name": "values_#_date",
+      "is_static": false
+    },
+    {
+      "id": "f7724f72-ae42-4f8f-ba4f-ac4d52a3608a",
+      "source_id": "219bd627-9038-4adc-94b5-397f0debf91b",
+      "sink_id": "9af8c594-d629-4395-939e-8d21b413b866",
+      "source_name": "result",
+      "sink_name": "values_#_name",
+      "is_static": true
+    }
+  ],
+  "sub_graphs": [],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "advanced": false,
+        "secret": false,
+        "title": "Your Name",
+        "description": "Enter your name"
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "greeting": {
+        "advanced": false,
+        "secret": false,
+        "title": "Greeting",
+        "description": "The greeting message"
+      }
+    },
+    "required": [
+      "greeting"
+    ]
+  },
+  "has_external_trigger": false,
+  "has_human_in_the_loop": false,
+  "has_sensitive_action": false,
+  "trigger_setup_info": null,
+  "credentials_input_schema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}
