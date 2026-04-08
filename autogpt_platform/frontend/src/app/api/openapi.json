@@ -5460,9 +5460,9 @@
     "/api/platform-linking/chat/session": {
       "post": {
         "tags": ["platform-linking"],
-        "summary": "Create a CoPilot session for a linked user (bot-facing)",
-        "description": "Creates a new CoPilot chat session on behalf of a linked user.",
-        "operationId": "postPlatform-linkingCreate a copilot session for a linked user (bot-facing)",
+        "summary": "Create a CoPilot session for a server user (bot-facing)",
+        "description": "Creates a new CoPilot session on behalf of a platform user in a linked server.\nThe session is owned by the server owner's AutoGPT account.",
+        "operationId": "postPlatform-linkingCreate a copilot session for a server user (bot-facing)",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5496,9 +5496,9 @@
     "/api/platform-linking/chat/stream": {
       "post": {
         "tags": ["platform-linking"],
-        "summary": "Stream a CoPilot response for a linked user (bot-facing)",
-        "description": "Send a message to CoPilot on behalf of a linked user and stream\nthe response back as Server-Sent Events.\n\nThe bot authenticates with its API key — no user JWT needed.",
-        "operationId": "postPlatform-linkingStream a copilot response for a linked user (bot-facing)",
+        "summary": "Stream a CoPilot response for a server user (bot-facing)",
+        "description": "Send a message to CoPilot on behalf of a platform user in a linked server,\nstreaming the response back as Server-Sent Events.\n\nThe bot authenticates with its API key — no user JWT required.\nThe owner's AutoGPT account is resolved from the server link.",
+        "operationId": "postPlatform-linkingStream a copilot response for a server user (bot-facing)",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5526,9 +5526,9 @@
     "/api/platform-linking/links": {
       "get": {
         "tags": ["platform-linking"],
-        "summary": "List all platform links for the authenticated user",
-        "description": "Returns all platform identities linked to the current user's account.",
-        "operationId": "getPlatform-linkingList all platform links for the authenticated user",
+        "summary": "List all platform servers linked to the authenticated user",
+        "description": "Returns all platform servers where the current user is the owner.",
+        "operationId": "getPlatform-linkingList all platform servers linked to the authenticated user",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5537,7 +5537,7 @@
                 "schema": {
                   "items": { "$ref": "#/components/schemas/PlatformLinkInfo" },
                   "type": "array",
-                  "title": "Response Getplatform-Linkinglist All Platform Links For The Authenticated User"
+                  "title": "Response Getplatform-Linkinglist All Platform Servers Linked To The Authenticated User"
                 }
               }
             }
@@ -5552,9 +5552,9 @@
     "/api/platform-linking/links/{link_id}": {
       "delete": {
         "tags": ["platform-linking"],
-        "summary": "Unlink a platform identity",
-        "description": "Removes a platform link. The user will need to re-link if they\nwant to use the bot on that platform again.",
-        "operationId": "deletePlatform-linkingUnlink a platform identity",
+        "summary": "Unlink a platform server",
+        "description": "Removes a platform server link. The bot will stop working in that server\nuntil someone links it again.",
+        "operationId": "deletePlatform-linkingUnlink a platform server",
         "security": [{ "HTTPBearerJWT": [] }],
         "parameters": [
           {
@@ -5590,9 +5590,9 @@
     "/api/platform-linking/resolve": {
       "post": {
         "tags": ["platform-linking"],
-        "summary": "Resolve a platform identity to an AutoGPT user",
-        "description": "Called by the bot service on every incoming message to check if\nthe platform user has a linked AutoGPT account.",
-        "operationId": "postPlatform-linkingResolve a platform identity to an autogpt user",
+        "summary": "Check whether a platform server is linked",
+        "description": "Called by the bot on every incoming message to check whether the server\nhas a linked AutoGPT owner account.",
+        "operationId": "postPlatform-linkingCheck whether a platform server is linked",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5624,9 +5624,9 @@
     "/api/platform-linking/tokens": {
       "post": {
         "tags": ["platform-linking"],
-        "summary": "Create a link token for an unlinked platform user",
-        "description": "Called by the bot service when it encounters an unlinked user.\nGenerates a one-time token the user can use to link their account.",
-        "operationId": "postPlatform-linkingCreate a link token for an unlinked platform user",
+        "summary": "Create a link token for an unlinked server",
+        "description": "Called by the bot when it receives a message from an unlinked server.\nGenerates a one-time token the triggering user can click to become the owner.",
+        "operationId": "postPlatform-linkingCreate a link token for an unlinked server",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5661,7 +5661,7 @@
       "post": {
         "tags": ["platform-linking"],
         "summary": "Confirm a link token (user must be authenticated)",
-        "description": "Called by the frontend when the user clicks the link and is logged in.\nConsumes the token and creates the platform link.\nUses atomic update_many to prevent race conditions on double-click.",
+        "description": "Called by the frontend when the user clicks the link and is logged in.\nAtomically consumes the token and creates the server → owner link.",
         "operationId": "postPlatform-linkingConfirm a link token (user must be authenticated)",
         "security": [{ "HTTPBearerJWT": [] }],
         "parameters": [
@@ -5704,7 +5704,7 @@
       "get": {
         "tags": ["platform-linking"],
         "summary": "Check if a link token has been consumed",
-        "description": "Called by the bot service to check if a user has completed linking.",
+        "description": "Called by the bot to check if a user has completed server linking.",
         "operationId": "getPlatform-linkingCheck if a link token has been consumed",
         "parameters": [
           {
@@ -8598,10 +8598,20 @@
       },
       "BotChatRequest": {
         "properties": {
-          "user_id": {
+          "platform": { "$ref": "#/components/schemas/Platform" },
+          "platform_server_id": {
             "type": "string",
-            "title": "User Id",
-            "description": "The linked AutoGPT user ID"
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Platform Server Id",
+            "description": "Server/guild/group ID (used to resolve the owner)"
+          },
+          "platform_user_id": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Platform User Id",
+            "description": "Platform user ID of the person who sent the message (for per-user session keying)"
           },
           "message": {
             "type": "string",
@@ -8613,13 +8623,18 @@
           "session_id": {
             "anyOf": [{ "type": "string" }, { "type": "null" }],
             "title": "Session Id",
-            "description": "Existing chat session ID. If omitted, a new session is created."
+            "description": "Existing CoPilot session ID. If omitted, a new session is created."
           }
         },
         "type": "object",
-        "required": ["user_id", "message"],
+        "required": [
+          "platform",
+          "platform_server_id",
+          "platform_user_id",
+          "message"
+        ],
         "title": "BotChatRequest",
-        "description": "Request from the bot to chat as a linked user."
+        "description": "Request from the bot to send a message on behalf of a server user.\n\nThe backend resolves the AutoGPT owner from platform_server_id internally —\nthe bot never handles AutoGPT user IDs directly."
       },
       "BotChatSessionResponse": {
         "properties": {
@@ -8749,18 +8764,21 @@
         "properties": {
           "success": { "type": "boolean", "title": "Success" },
           "platform": { "type": "string", "title": "Platform" },
-          "platform_user_id": { "type": "string", "title": "Platform User Id" },
-          "platform_username": {
+          "platform_server_id": {
+            "type": "string",
+            "title": "Platform Server Id"
+          },
+          "server_name": {
             "anyOf": [{ "type": "string" }, { "type": "null" }],
-            "title": "Platform Username"
+            "title": "Server Name"
           }
         },
         "type": "object",
         "required": [
           "success",
           "platform",
-          "platform_user_id",
-          "platform_username"
+          "platform_server_id",
+          "server_name"
         ],
         "title": "ConfirmLinkResponse"
       },
@@ -8847,12 +8865,19 @@
             "$ref": "#/components/schemas/Platform",
             "description": "Platform name"
           },
+          "platform_server_id": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Platform Server Id",
+            "description": "Server/guild/group ID on the platform"
+          },
           "platform_user_id": {
             "type": "string",
             "maxLength": 255,
             "minLength": 1,
             "title": "Platform User Id",
-            "description": "The user's ID on the platform"
+            "description": "Platform user ID of the person claiming ownership"
           },
           "platform_username": {
             "anyOf": [
@@ -8860,7 +8885,15 @@
               { "type": "null" }
             ],
             "title": "Platform Username",
-            "description": "Display name (best effort)"
+            "description": "Display name of the person claiming ownership"
+          },
+          "server_name": {
+            "anyOf": [
+              { "type": "string", "maxLength": 255 },
+              { "type": "null" }
+            ],
+            "title": "Server Name",
+            "description": "Display name of the server/group"
           },
           "channel_id": {
             "anyOf": [
@@ -8868,13 +8901,13 @@
               { "type": "null" }
             ],
             "title": "Channel Id",
-            "description": "Channel ID for sending confirmation back"
+            "description": "Channel ID so the bot can send a confirmation message"
           }
         },
         "type": "object",
-        "required": ["platform", "platform_user_id"],
+        "required": ["platform", "platform_server_id", "platform_user_id"],
         "title": "CreateLinkTokenRequest",
-        "description": "Request from the bot service to create a linking token."
+        "description": "Request from the bot service to create a linking token for a server.\n\nCalled when no PlatformLink exists for the given server. The bot sends\nthe resulting link URL to the user who triggered the interaction — they\nbecome the server owner when they complete the link."
       },
       "CreateSessionResponse": {
         "properties": {
@@ -10855,10 +10888,6 @@
             "type": "string",
             "enum": ["pending", "linked", "expired"],
             "title": "Status"
-          },
-          "user_id": {
-            "anyOf": [{ "type": "string" }, { "type": "null" }],
-            "title": "User Id"
           }
         },
         "type": "object",
@@ -11722,10 +11751,17 @@
         "properties": {
           "id": { "type": "string", "title": "Id" },
           "platform": { "type": "string", "title": "Platform" },
-          "platform_user_id": { "type": "string", "title": "Platform User Id" },
-          "platform_username": {
+          "platform_server_id": {
+            "type": "string",
+            "title": "Platform Server Id"
+          },
+          "owner_platform_user_id": {
+            "type": "string",
+            "title": "Owner Platform User Id"
+          },
+          "server_name": {
             "anyOf": [{ "type": "string" }, { "type": "null" }],
-            "title": "Platform Username"
+            "title": "Server Name"
           },
           "linked_at": {
             "type": "string",
@@ -11737,8 +11773,9 @@
         "required": [
           "id",
           "platform",
-          "platform_user_id",
-          "platform_username",
+          "platform_server_id",
+          "owner_platform_user_id",
+          "server_name",
           "linked_at"
         ],
         "title": "PlatformLinkInfo"
@@ -12268,26 +12305,21 @@
       "ResolveRequest": {
         "properties": {
           "platform": { "$ref": "#/components/schemas/Platform" },
-          "platform_user_id": {
+          "platform_server_id": {
             "type": "string",
             "maxLength": 255,
             "minLength": 1,
-            "title": "Platform User Id"
+            "title": "Platform Server Id",
+            "description": "Server/guild/group ID to look up"
           }
         },
         "type": "object",
-        "required": ["platform", "platform_user_id"],
+        "required": ["platform", "platform_server_id"],
         "title": "ResolveRequest",
-        "description": "Resolve a platform identity to an AutoGPT user."
+        "description": "Check whether a platform server is linked to an AutoGPT owner account."
       },
       "ResolveResponse": {
-        "properties": {
-          "linked": { "type": "boolean", "title": "Linked" },
-          "user_id": {
-            "anyOf": [{ "type": "string" }, { "type": "null" }],
-            "title": "User Id"
-          }
-        },
+        "properties": { "linked": { "type": "boolean", "title": "Linked" } },
         "type": "object",
         "required": ["linked"],
         "title": "ResolveResponse"
