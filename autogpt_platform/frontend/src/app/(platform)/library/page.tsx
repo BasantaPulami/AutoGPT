@@ -9,6 +9,7 @@ import { FavoriteAnimationProvider } from "./context/FavoriteAnimationContext";
 import type { LibraryTab, AgentStatusFilter } from "./types";
 import { useLibraryFleetSummary } from "./hooks/useLibraryFleetSummary";
 import { Flag, useGetFlag } from "@/services/feature-flags/use-get-flag";
+import { useLibraryAgents } from "@/hooks/useLibraryAgents/useLibraryAgents";
 
 const LIBRARY_TABS: LibraryTab[] = [
   { id: "all", title: "All", icon: ListIcon },
@@ -22,7 +23,8 @@ export default function LibraryPage() {
   const [activeTab, setActiveTab] = useState(LIBRARY_TABS[0].id);
   const [statusFilter, setStatusFilter] = useState<AgentStatusFilter>("all");
   const isAgentBriefingEnabled = useGetFlag(Flag.AGENT_BRIEFING);
-  const fleetSummary = useLibraryFleetSummary();
+  const { agents } = useLibraryAgents();
+  const fleetSummary = useLibraryFleetSummary(agents);
 
   useEffect(() => {
     document.title = "Library – AutoGPT Platform";
