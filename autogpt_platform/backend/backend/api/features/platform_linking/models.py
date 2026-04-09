@@ -60,12 +60,22 @@ class CreateLinkTokenRequest(BaseModel):
 
 
 class ResolveRequest(BaseModel):
-    """Check whether a platform server is linked to an AutoGPT owner account."""
+    """Check whether a platform server is linked to an AutoGPT owner account.
+
+    In DM contexts there is no server — platform_user_id enables a fallback
+    lookup: if no server link is found, check whether the user is already an
+    owner of any linked server on this platform.
+    """
 
     platform: Platform
     platform_server_id: str = Field(
         description="Server/guild/group ID to look up",
         min_length=1,
+        max_length=255,
+    )
+    platform_user_id: str | None = Field(
+        default=None,
+        description="DM fallback: if no server link found, check owner status",
         max_length=255,
     )
 

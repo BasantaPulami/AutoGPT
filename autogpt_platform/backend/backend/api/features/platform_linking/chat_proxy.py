@@ -39,14 +39,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def _resolve_owner(platform: str, platform_server_id: str) -> str:
+async def _resolve_owner(
+    platform: str,
+    platform_server_id: str,
+    platform_user_id: str | None = None,
+) -> str:
     """
     Look up the AutoGPT owner user ID for a linked server.
-    Raises 404 if the server is not linked.
+    Falls back to owner lookup by user ID for DM contexts.
+    Raises 404 if neither the server nor the user is linked.
     """
     link = await PlatformLink.prisma().find_first(
         where={"platform": platform, "platformServerId": platform_server_id}
     )
+
+    if not link and platform_user_id:
+        link = await PlatformLink.prisma().find_first(
+            where={"platform": platform, "ownerPlatformUserId": platform_user_id}
+        )
+
     if not link:
         raise HTTPException(
             status_code=404,
@@ -71,7 +82,9 @@ async def bot_create_session(
     check_bot_api_key(x_bot_api_key)
 
     owner_user_id = await _resolve_owner(
-        request.platform.value, request.platform_server_id
+        request.platform.value,
+        request.platform_server_id,
+        request.platform_user_id,
     )
     session = await create_chat_session(owner_user_id)
 
@@ -105,7 +118,9 @@ async def bot_chat_stream(
     check_bot_api_key(x_bot_api_key)
 
     owner_user_id = await _resolve_owner(
-        request.platform.value, request.platform_server_id
+        request.platform.value,
+        request.platform_server_id,
+        request.platform_user_id,
     )
 
     # Get or create session
