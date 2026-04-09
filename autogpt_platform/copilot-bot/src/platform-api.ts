@@ -45,14 +45,23 @@ export class PlatformAPI {
     this.botApiKey = key;
   }
 
-  /** Check if a platform server is linked to an AutoGPT account. */
-  async resolve(platform: string, platformServerId: string): Promise<ResolveResult> {
+  /**
+   * Check if a platform server is linked to an AutoGPT account.
+   * Pass platformUserId in DM contexts so the backend can fall back to
+   * owner lookup — prevents re-auth for users already linked via a server.
+   */
+  async resolve(
+    platform: string,
+    platformServerId: string,
+    platformUserId?: string,
+  ): Promise<ResolveResult> {
     const res = await fetch(`${this.baseUrl}/api/platform-linking/resolve`, {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({
         platform: platform.toUpperCase(),
         platform_server_id: platformServerId,
+        platform_user_id: platformUserId,
       }),
       signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
     });

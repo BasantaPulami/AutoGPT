@@ -72,7 +72,8 @@ export async function createBot(config: Config, stateAdapter: StateAdapter) {
       return;
     }
 
-    const resolved = await api.resolve(platform, serverId);
+    // Pass userId so DM fallback works: already-linked users aren't re-prompted
+    const resolved = await api.resolve(platform, serverId, platformUserId);
 
     if (!resolved.linked) {
       await handleUnlinkedServer(thread, message, platform, serverId, api, bot);
@@ -98,7 +99,7 @@ export async function createBot(config: Config, stateAdapter: StateAdapter) {
     }
 
     // Re-check linking in case the owner just completed setup
-    const resolved = await api.resolve(platform, serverId);
+    const resolved = await api.resolve(platform, serverId, platformUserId);
 
     if (!resolved.linked) {
       await handleUnlinkedServer(thread, message, platform, serverId, api, bot);
