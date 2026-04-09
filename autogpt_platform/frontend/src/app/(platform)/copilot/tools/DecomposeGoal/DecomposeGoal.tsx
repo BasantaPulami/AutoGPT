@@ -137,14 +137,14 @@ export function DecomposeGoalTool({ part, isLastMessage }: Props) {
     return () => clearInterval(interval);
   }, [showActions, timerActive, part.toolCallId]);
 
-  // Auto-approve when countdown reaches 0 (only if timer is still active).
-  // approve() is stable via approvedRef — timerActive is captured in the condition
-  // so the effect re-runs whenever timerActive changes, preventing stale closure issues.
+  // Auto-approve when countdown reaches 0 (only if timer is still active and actions visible).
+  // showActions prevents firing after isLastMessage changes (race condition guard).
+  // approve() is stable via approvedRef — safe to omit from deps.
   useEffect(() => {
-    if (secondsLeft === 0 && timerActive) {
+    if (secondsLeft === 0 && timerActive && showActions) {
       approve();
     }
-  }, [secondsLeft, timerActive]); // approve reads refs only — safe to omit
+  }, [secondsLeft, timerActive, showActions]); // approve reads refs only — safe to omit
 
   const progress = secondsLeft / COUNTDOWN_SECONDS;
   const dashOffset = CIRCUMFERENCE * (1 - progress);
