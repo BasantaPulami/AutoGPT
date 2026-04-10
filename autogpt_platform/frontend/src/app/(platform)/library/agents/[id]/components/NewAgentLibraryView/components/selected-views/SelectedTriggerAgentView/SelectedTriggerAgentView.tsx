@@ -43,7 +43,11 @@ export function SelectedTriggerAgentView({
     },
   );
 
-  const userTimezone = useUserTimezone();
+  const rawUserTimezone = useUserTimezone();
+  const displayTimezone =
+    rawUserTimezone && rawUserTimezone !== "not-set"
+      ? rawUserTimezone
+      : Intl.DateTimeFormat().resolvedOptions().timeZone;
   const schedule = schedules?.[0];
 
   if (error) {
@@ -107,7 +111,7 @@ export function SelectedTriggerAgentView({
                       <span className="text-zinc-500">&middot;</span>{" "}
                       <span className="text-zinc-500">
                         {getTimezoneDisplayName(
-                          schedule.timezone || userTimezone || "UTC",
+                          displayTimezone || schedule.timezone || "UTC",
                         )}
                       </span>
                     </Text>
@@ -117,7 +121,7 @@ export function SelectedTriggerAgentView({
                     <Text variant="body" className="flex items-center gap-3">
                       {formatInTimezone(
                         schedule.next_run_time,
-                        userTimezone || "UTC",
+                        displayTimezone || "UTC",
                         {
                           year: "numeric",
                           month: "long",
@@ -130,7 +134,7 @@ export function SelectedTriggerAgentView({
                       <span className="text-zinc-500">&middot;</span>{" "}
                       <span className="text-zinc-500">
                         {getTimezoneDisplayName(
-                          schedule.timezone || userTimezone || "UTC",
+                          displayTimezone || schedule.timezone || "UTC",
                         )}
                       </span>
                     </Text>
