@@ -709,7 +709,11 @@ class ExecutionProcessor:
                 )
                 if extra_cost > 0:
                     execution_stats.extra_cost += extra_cost
-                    self._handle_low_balance(
+                    # Wrap in to_thread — _handle_low_balance does sync DB
+                    # work and we're in an async method, so calling it
+                    # directly would block the event loop.
+                    await asyncio.to_thread(
+                        self._handle_low_balance,
                         db_client=get_db_client(),
                         user_id=node_exec.user_id,
                         current_balance=remaining_balance,
