@@ -1379,9 +1379,7 @@ async def _cleanup_stale_subscriptions(customer_id: str, new_sub_id: str) -> Non
     a periodic reconciliation job is the intended backstop for persistent drift.
     """
     try:
-        await _cancel_customer_subscriptions(
-            customer_id, exclude_sub_id=new_sub_id
-        )
+        await _cancel_customer_subscriptions(customer_id, exclude_sub_id=new_sub_id)
     except stripe.StripeError:
         logger.warning(
             "_cleanup_stale_subscriptions: Stripe error while cleaning up stale"
