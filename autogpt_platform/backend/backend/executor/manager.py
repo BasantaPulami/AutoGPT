@@ -1181,8 +1181,8 @@ class ExecutionProcessor:
             return 0, 0
         # Cap to protect against a corrupted llm_call_count.
         capped = min(extra_iterations, self._MAX_EXTRA_ITERATIONS)
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self._charge_extra_iterations_sync, node_exec, capped
+        return await asyncio.to_thread(
+            self._charge_extra_iterations_sync, node_exec, capped
         )
 
     async def charge_node_usage(
@@ -1203,12 +1203,11 @@ class ExecutionProcessor:
         sub-steps of a single block run from the user's perspective and
         should not push them into higher per-execution cost tiers.
         """
-        total_cost, remaining = await asyncio.get_event_loop().run_in_executor(
-            None, self._charge_usage, node_exec, 0
+        total_cost, remaining = await asyncio.to_thread(
+            self._charge_usage, node_exec, 0
         )
         if total_cost > 0:
-            await asyncio.get_event_loop().run_in_executor(
-                None,
+            await asyncio.to_thread(
                 self._handle_low_balance,
                 get_db_client(),
                 node_exec.user_id,
