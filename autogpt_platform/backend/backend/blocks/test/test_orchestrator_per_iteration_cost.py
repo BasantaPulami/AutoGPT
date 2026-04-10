@@ -506,8 +506,11 @@ async def test_on_node_execution_insufficient_balance_records_error_and_notifies
     """When extra-iteration charging fails with InsufficientBalanceError:
 
     - the run still reports COMPLETED (the work is already done)
-    - execution_stats.error is set so monitoring picks it up
+    - execution_stats.error is NOT set (would flip node_error_count and
+      leak balance amounts into persisted node_stats — see manager.py
+      comment in the IBE handler)
     - _handle_insufficient_funds_notif is called so the user is notified
+    - the structured ERROR log is the alerting hook
     """
     from backend.data.execution import ExecutionStatus
     from backend.executor import manager
@@ -542,8 +545,11 @@ async def test_on_node_execution_insufficient_balance_records_error_and_notifies
         nodes_input_masks=None,
         graph_stats_pair=stats_pair,
     )
-    # Error recorded on stats so downstream monitoring can surface it.
-    assert isinstance(result_stats.error, InsufficientBalanceError)
+    # error stays None — node ran to completion, only the post-hoc
+    # charge failed. Setting .error would (a) flip node_error_count++
+    # creating an "errored COMPLETED node" inconsistency, and (b) leak
+    # balance amounts into persisted node_stats.
+    assert result_stats.error is None
     # User notification fired.
     assert len(calls["handle_insufficient_funds_notif"]) == 1
     assert calls["handle_insufficient_funds_notif"][0]["user_id"] == "u"
