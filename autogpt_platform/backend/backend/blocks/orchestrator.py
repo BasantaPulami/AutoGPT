@@ -1130,10 +1130,14 @@ class OrchestratorBlock(Block):
             # avoid free tool execution. Charging post-completion (vs.
             # pre-execution) avoids billing users for failed tool calls.
             # Skipped for dry runs.
+            #
+            # `error is None` intentionally excludes both Exception and
+            # BaseException subclasses (e.g. CancelledError) so cancelled
+            # or terminated tool runs are not billed.
             if (
                 not execution_params.execution_context.dry_run
                 and tool_node_stats is not None
-                and not isinstance(tool_node_stats.error, Exception)
+                and tool_node_stats.error is None
             ):
                 tool_cost, _ = await asyncio.to_thread(
                     execution_processor.charge_node_usage,
@@ -1277,6 +1281,13 @@ class OrchestratorBlock(Block):
                 content=content,
                 is_error=tool_failed,
             )
+        except InsufficientBalanceError:
+            # Billing failures must stop the agent loop cleanly — do NOT
+            # downgrade them into a tool error that gets fed back to the
+            # LLM. Re-raise so the orchestrator's outer error handling
+            # halts the run (mirrors main execution queue behaviour) and
+            # avoids leaking exact balance amounts into LLM context.
+            raise
         except Exception as e:
             logger.error("Tool execution failed: %s", e)
             return ToolCallResult(
@@ -1481,6 +1492,13 @@ class OrchestratorBlock(Block):
                             "content": [{"type": "text", "text": text}],
                             "isError": tool_failed,
                         }
+                    except InsufficientBalanceError:
+                        # Same carve-out as _agent_mode_tool_executor:
+                        # billing failures must propagate to stop the run
+                        # rather than be fed back to the LLM as a tool
+                        # error (which would leak balance amounts and let
+                        # the loop continue consuming unbillable work).
+                        raise
                     except Exception as e:
                         logger.error("SDK tool execution failed: %s", e)
                         return {

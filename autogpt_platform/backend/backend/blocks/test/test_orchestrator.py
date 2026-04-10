@@ -924,8 +924,11 @@ async def test_orchestrator_agent_mode():
         )
         # Mock charge_node_usage (called after successful tool execution).
         # Returns (cost, remaining_balance). Synchronous because it's called
-        # via asyncio.to_thread.
-        mock_execution_processor.charge_node_usage = MagicMock(return_value=(0, 0))
+        # via asyncio.to_thread. Use a non-zero cost so the merge_stats
+        # branch is actually exercised, and assert it's called below.
+        mock_execution_processor.charge_node_usage = MagicMock(
+            return_value=(10, 990)
+        )
 
         # Mock the get_execution_outputs_by_node_exec_id method
         mock_db_client.get_execution_outputs_by_node_exec_id.return_value = {
@@ -970,6 +973,11 @@ async def test_orchestrator_agent_mode():
 
         # Verify tool was executed via execution processor
         assert mock_execution_processor.on_node_execution.call_count == 1
+
+        # Verify charge_node_usage was actually called for the successful
+        # tool execution — this guards against regressions where the
+        # post-execution tool charging is accidentally removed.
+        assert mock_execution_processor.charge_node_usage.call_count == 1
 
 
 @pytest.mark.asyncio

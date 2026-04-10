@@ -684,10 +684,16 @@ class ExecutionProcessor:
         # is already covered by _charge_usage(); each additional LLM call
         # costs another base_cost. Skipped for dry runs and failed runs.
         #
-        # InsufficientBalanceError is logged at ERROR level (this is a
-        # billing leak — the work is already done, but the user can't pay)
-        # and re-surfaced via execution_stats.error so monitoring can pick
-        # it up. Other exceptions are warnings.
+        # InsufficientBalanceError here is a post-hoc billing leak — the
+        # work is already done but the user can no longer pay. We:
+        #   1. log at ERROR with structured fields so alerting can catch it
+        #   2. record the error on execution_stats.error for downstream
+        #      monitoring (stats are persisted into node_stats below)
+        #   3. fire _handle_insufficient_funds_notif so the user is
+        #      notified (mirrors the main queue path at ~line 1254)
+        # The run itself is kept COMPLETED (the block's outputs are
+        # already committed) — matching the documented "billing leak"
+        # contract rather than retroactively failing a successful run.
         if (
             status == ExecutionStatus.COMPLETED
             and node.block.charge_per_llm_call
@@ -711,9 +717,36 @@ class ExecutionProcessor:
                     )
             except InsufficientBalanceError as e:
                 log_metadata.error(
-                    f"Billing leak: insufficient balance after {node.block.name} "
-                    f"completed {extra_iterations} extra iterations: {e}"
+                    "billing_leak: insufficient balance after "
+                    f"{node.block.name} completed {extra_iterations} "
+                    f"extra iterations",
+                    extra={
+                        "billing_leak": True,
+                        "user_id": node_exec.user_id,
+                        "graph_id": node_exec.graph_id,
+                        "block_id": node_exec.block_id,
+                        "extra_iterations": extra_iterations,
+                        "error": str(e),
+                    },
                 )
+                # Surface on execution_stats so node_stats persistence
+                # below records the billing failure for monitoring.
+                execution_stats.error = e
+                # Notify the user they're out of credits. Runs through
+                # Redis dedup (per user+graph) so repeat runs don't spam.
+                try:
+                    await asyncio.to_thread(
+                        self._handle_insufficient_funds_notif,
+                        get_db_client(),
+                        node_exec.user_id,
+                        node_exec.graph_id,
+                        e,
+                    )
+                except Exception as notif_error:  # pragma: no cover
+                    log_metadata.warning(
+                        f"Failed to send insufficient funds notification: "
+                        f"{notif_error}"
+                    )
             except Exception as e:
                 log_metadata.warning(
                     f"Failed to charge extra iterations for {node.block.name}: {e}"
@@ -982,6 +1015,27 @@ class ExecutionProcessor:
                 stats=exec_stats,
             )
 
+    def _resolve_block_cost(
+        self,
+        node_exec: NodeExecutionEntry,
+    ) -> tuple[Any, int, dict]:
+        """Look up the block and compute its base usage cost for an exec.
+
+        Shared by :meth:`_charge_usage` and :meth:`charge_extra_iterations`
+        so the (get_block, block_usage_cost) lookup lives in exactly one
+        place. Returns ``(block, cost, matching_filter)``. ``block`` is
+        ``None`` if the block id can't be resolved — callers should treat
+        that as "nothing to charge".
+        """
+        block = get_block(node_exec.block_id)
+        if not block:
+            logger.error(f"Block {node_exec.block_id} not found.")
+            return None, 0, {}
+        cost, matching_filter = block_usage_cost(
+            block=block, input_data=node_exec.inputs
+        )
+        return block, cost, matching_filter
+
     def _charge_usage(
         self,
         node_exec: NodeExecutionEntry,
@@ -990,14 +1044,10 @@ class ExecutionProcessor:
         total_cost = 0
         remaining_balance = 0
         db_client = get_db_client()
-        block = get_block(node_exec.block_id)
+        block, cost, matching_filter = self._resolve_block_cost(node_exec)
         if not block:
-            logger.error(f"Block {node_exec.block_id} not found.")
             return total_cost, 0
 
-        cost, matching_filter = block_usage_cost(
-            block=block, input_data=node_exec.inputs
-        )
         if cost > 0:
             remaining_balance = db_client.spend_credits(
                 user_id=node_exec.user_id,
@@ -1081,13 +1131,8 @@ class ExecutionProcessor:
         # Cap to protect against a corrupted llm_call_count.
         capped_iterations = min(extra_iterations, self._MAX_EXTRA_ITERATIONS)
         db_client = get_db_client()
-        block = get_block(node_exec.block_id)
-        if not block:
-            return 0, 0
-        cost, matching_filter = block_usage_cost(
-            block=block, input_data=node_exec.inputs
-        )
-        if cost <= 0:
+        block, cost, matching_filter = self._resolve_block_cost(node_exec)
+        if not block or cost <= 0:
             return 0, 0
         total_extra_cost = cost * capped_iterations
         remaining_balance = db_client.spend_credits(
