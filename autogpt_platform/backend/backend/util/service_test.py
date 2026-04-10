@@ -30,6 +30,12 @@ class _SupportsGetReturn(Protocol):
     def _get_return(self, expected_return: TypeAdapter | None, result: Any) -> Any: ...
 
 
+class _SupportsHandleCallMethodResponse(Protocol):
+    def _handle_call_method_response(
+        self, *, response: Any, method_name: str
+    ) -> Any: ...
+
+
 class ServiceTest(AppService):
     def __init__(self):
         super().__init__()
@@ -516,10 +522,13 @@ class TestHTTPErrorRetryBehavior:
             "400 Bad Request", request=Mock(), response=mock_response
         )
 
-        client = get_service_client(ServiceTestClient)
+        client = cast(
+            _SupportsHandleCallMethodResponse,
+            get_service_client(ServiceTestClient),
+        )
 
         with pytest.raises(GraphValidationError) as exc_info:
-            client._handle_call_method_response(  # type: ignore[attr-defined]
+            client._handle_call_method_response(
                 response=mock_response, method_name="test_method"
             )
 
@@ -540,10 +549,13 @@ class TestHTTPErrorRetryBehavior:
             "400 Bad Request", request=Mock(), response=mock_response
         )
 
-        client = get_service_client(ServiceTestClient)
+        client = cast(
+            _SupportsHandleCallMethodResponse,
+            get_service_client(ServiceTestClient),
+        )
 
         with pytest.raises(GraphValidationError) as exc_info:
-            client._handle_call_method_response(  # type: ignore[attr-defined]
+            client._handle_call_method_response(
                 response=mock_response, method_name="test_method"
             )
 
