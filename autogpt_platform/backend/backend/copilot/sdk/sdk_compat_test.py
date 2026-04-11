@@ -196,3 +196,79 @@ def test_sdk_exports_hook_event_type(hook_event: str):
     # HookEvent is a Literal type — check that our events are valid values.
     # We can't easily inspect Literal at runtime, so just verify the type exists.
     assert HookEvent is not None
+
+
+# ---------------------------------------------------------------------------
+# OpenRouter compatibility — bundled CLI version pin
+# ---------------------------------------------------------------------------
+#
+# We're stuck on ``claude-agent-sdk==0.1.45`` (bundled CLI ``2.1.63``)
+# because every version above introduces a 400 against OpenRouter:
+#
+# 1. CLI ``2.1.69`` (= SDK ``0.1.46``) shipped a `tool_reference` content
+#    block in `tool_result.content` that OpenRouter's stricter Zod
+#    validation rejects.  See PR
+#    https://github.com/Significant-Gravitas/AutoGPT/pull/12294 for the
+#    forensic write-up that originally pinned us.  CLI ``2.1.70`` added
+#    proxy detection that *should* disable the offending block, but two
+#    later attempts (Dependabot bumps to 0.1.55 / 0.1.56) still failed.
+#
+# 2. A second regression — the ``context-management-2025-06-27`` beta
+#    header — appeared in some CLI version after ``2.1.91``.  Tracked
+#    upstream at
+#    https://github.com/anthropics/claude-agent-sdk-python/issues/789
+#    (still open at the time of writing, no upstream PR yet).
+#
+# This test is the cheapest possible regression guard: it pins the
+# bundled CLI to a known-good version.  If anyone bumps
+# ``claude-agent-sdk`` in ``pyproject.toml``, the bundled CLI version in
+# ``_cli_version.py`` will change and this test will fail with a clear
+# message that points the next person at the OpenRouter compat issue
+# instead of letting them silently re-break production.
+#
+# Workaround for actually upgrading: set the
+# ``claude_agent_cli_path`` config option (or the matching env var) to
+# point at a separately-installed Claude Code CLI binary at a known-good
+# version, so the SDK Python API surface and the CLI binary version can
+# be picked independently.
+
+# CLI versions verified to work against OpenRouter from production
+# traffic.  When upstream lands a fix and we can confirm a newer version
+# works, add it to this set rather than blanket-removing the assertion.
+_KNOWN_GOOD_BUNDLED_CLI_VERSIONS: frozenset[str] = frozenset({"2.1.63"})
+
+
+def test_bundled_cli_version_is_known_good_against_openrouter():
+    """Pin the bundled CLI version so accidental SDK bumps cause a loud,
+    fast failure with a pointer to the OpenRouter compatibility issue."""
+    from claude_agent_sdk._cli_version import __cli_version__
+
+    assert __cli_version__ in _KNOWN_GOOD_BUNDLED_CLI_VERSIONS, (
+        f"Bundled Claude Code CLI version is {__cli_version__!r}, which is "
+        f"not in the OpenRouter-known-good set "
+        f"{sorted(_KNOWN_GOOD_BUNDLED_CLI_VERSIONS)!r}. "
+        "If you intentionally bumped `claude-agent-sdk`, verify the new "
+        "bundled CLI works with OpenRouter against the reproduction test "
+        "in `cli_openrouter_compat_test.py`, then add the new CLI version "
+        "to `_KNOWN_GOOD_BUNDLED_CLI_VERSIONS`. If you cannot make the "
+        "bundled CLI work, set `claude_agent_cli_path` to a known-good "
+        "binary instead and skip the bundled one. See "
+        "https://github.com/anthropics/claude-agent-sdk-python/issues/789 "
+        "and https://github.com/Significant-Gravitas/AutoGPT/pull/12294."
+    )
+
+
+def test_sdk_exposes_cli_path_option():
+    """Sanity-check that the SDK still exposes the `cli_path` option we use
+    for the OpenRouter workaround.  If upstream removes it we need to know."""
+    import inspect
+
+    from claude_agent_sdk import ClaudeAgentOptions
+
+    sig = inspect.signature(ClaudeAgentOptions)
+    assert "cli_path" in sig.parameters, (
+        "ClaudeAgentOptions no longer accepts `cli_path` — our "
+        "claude_agent_cli_path config override would be silently ignored. "
+        "Either find an alternative override mechanism or pin the SDK to a "
+        "version that still exposes it."
+    )

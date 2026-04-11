@@ -2245,6 +2245,12 @@ async def stream_chat_completion_sdk(
             sdk_options_kwargs["env"] = sdk_env
         if use_resume and resume_file:
             sdk_options_kwargs["resume"] = resume_file
+        # Optional explicit Claude Code CLI binary path (decouples the
+        # bundled SDK version from the CLI version we run — needed because
+        # the CLI bundled in 0.1.46+ is broken against OpenRouter).  Falls
+        # back to the bundled binary when unset.
+        if config.claude_agent_cli_path:
+            sdk_options_kwargs["cli_path"] = config.claude_agent_cli_path
 
         options = ClaudeAgentOptions(**sdk_options_kwargs)  # type: ignore[arg-type]  # dynamic kwargs
 

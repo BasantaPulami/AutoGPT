@@ -172,6 +172,18 @@ class ChatConfig(BaseSettings):
         description="Maximum number of retries for transient API errors "
         "(429, 5xx, ECONNRESET) before surfacing the error to the user.",
     )
+    claude_agent_cli_path: str | None = Field(
+        default=None,
+        description="Optional explicit path to a Claude Code CLI binary. "
+        "When set, the SDK uses this binary instead of the version bundled "
+        "with the installed `claude-agent-sdk` package — letting us pin "
+        "the Python SDK and the CLI independently. Critical for keeping "
+        "OpenRouter compatibility while still picking up newer SDK API "
+        "features (the bundled CLI version in 0.1.46+ is broken against "
+        "OpenRouter — see PR #12294 and "
+        "anthropics/claude-agent-sdk-python#789). Falls back to the "
+        "bundled binary when unset.",
+    )
     use_openrouter: bool = Field(
         default=True,
         description="Enable routing API calls through the OpenRouter proxy. "
