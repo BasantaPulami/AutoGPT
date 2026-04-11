@@ -369,7 +369,6 @@ class RunAgentTool(BaseTool):
         graph: GraphModel,
         error: GraphValidationError,
         session_id: str,
-        graph_credentials: dict[str, CredentialsMetaInput],
     ) -> SetupRequirementsResponse | None:
         """Convert a credential-related ``GraphValidationError`` into
         the inline ``SetupRequirementsResponse`` the frontend renders.
@@ -377,11 +376,10 @@ class RunAgentTool(BaseTool):
         Returns ``None`` if *error* isn't credential-related — the
         caller should then fall back to a plain text error.
 
-        ``graph_credentials`` is the already-matched credentials map
-        from ``_check_prerequisites``. It is used to filter
-        ``missing_credentials`` down to the credential fields the user
-        still needs to connect — mirroring how the non-race path builds
-        the same card at lines 478-481.
+        This is the race-condition path (prereq check passed → creds
+        deleted/invalidated → executor/scheduler raised). All credential
+        fields are shown as missing so the user sees exactly which
+        accounts to reconnect.
         """
         has_credential_error = any(
             is_credential_validation_error_message(msg)
@@ -391,15 +389,11 @@ class RunAgentTool(BaseTool):
         if not has_credential_error:
             return None
 
-        # ``requirements_creds_dict`` is the full credential schema
-        # (what the card's "Requirements" section renders). The
-        # ``missing_credentials_dict`` is the subset the user still
-        # needs to connect — we pass in the already-matched
-        # ``graph_credentials`` so connected credentials are excluded.
-        requirements_creds_dict = build_missing_credentials_from_graph(graph, None)
-        missing_credentials_dict = build_missing_credentials_from_graph(
-            graph, graph_credentials
-        )
+        # Show all credential fields as missing — in the race case the
+        # previously-matched credentials have since become invalid, so
+        # the user needs to reconnect all of them.  Passing ``None``
+        # means no field is treated as "already connected".
+        credentials_dict = build_missing_credentials_from_graph(graph, None)
         return SetupRequirementsResponse(
             message=(
                 f"Agent '{graph.name}' has credentials that are missing or "
@@ -412,11 +406,11 @@ class RunAgentTool(BaseTool):
                 agent_name=graph.name,
                 user_readiness=UserReadiness(
                     has_all_credentials=False,
-                    missing_credentials=missing_credentials_dict,
+                    missing_credentials=credentials_dict,
                     ready_to_run=False,
                 ),
                 requirements={
-                    "credentials": list(requirements_creds_dict.values()),
+                    "credentials": list(credentials_dict.values()),
                     "inputs": get_inputs_from_schema(graph.input_schema),
                     "execution_modes": self._get_execution_modes(graph),
                 },
@@ -578,7 +572,6 @@ class RunAgentTool(BaseTool):
                 graph=graph,
                 error=e,
                 session_id=session_id,
-                graph_credentials=graph_credentials,
             )
             if creds_setup is not None:
                 return creds_setup
@@ -774,7 +767,6 @@ class RunAgentTool(BaseTool):
                 graph=graph,
                 error=e,
                 session_id=session_id,
-                graph_credentials=graph_credentials,
             )
             if creds_setup is not None:
                 return creds_setup

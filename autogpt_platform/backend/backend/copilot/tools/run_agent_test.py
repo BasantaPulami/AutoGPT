@@ -504,13 +504,11 @@ async def test_build_setup_requirements_from_credential_validation_error(
         node_errors={"some-node-id": {"credentials": "These credentials are required"}},
     )
 
-    # No matched credentials => missing_credentials should equal the full
-    # requirements set (the credential race with nothing connected).
+    # Race path: all credential fields shown as missing.
     response = tool._build_setup_requirements_from_validation_error(
         graph=graph,
         error=error,
         session_id="test-session",
-        graph_credentials={},
     )
 
     assert isinstance(response, SetupRequirementsResponse)
@@ -529,29 +527,14 @@ async def test_build_setup_requirements_from_credential_validation_error(
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_build_setup_requirements_filters_matched_credentials(
+async def test_build_setup_requirements_shows_all_creds_missing_in_race(
     setup_firecrawl_test_data,
 ):
-    """``missing_credentials`` must exclude credentials the user already
-    has connected (``graph_credentials``), otherwise the inline card
-    would show every connected credential as missing during a race."""
-    from typing import cast
-
-    from backend.data.model import CredentialsMetaInput
-
+    """In the race scenario (prereq passed → creds deleted → executor raised),
+    the helper must show ALL credential fields as missing so the user knows
+    which accounts need to be reconnected — not an empty missing_credentials map."""
     graph = setup_firecrawl_test_data["graph"]
     tool = RunAgentTool()
-
-    # Derive the graph's aggregated credential field keys and fabricate
-    # a fully-matched credentials map so that filtering leaves the
-    # missing_credentials map empty.  The helper only reads
-    # ``graph_credentials.keys()`` (via ``build_missing_credentials_from_graph``),
-    # so the values are opaque sentinels.
-    aggregated = graph.aggregate_credentials_inputs()
-    graph_credentials = cast(
-        dict[str, CredentialsMetaInput],
-        {field_key: object() for field_key in aggregated.keys()},
-    )
 
     error = GraphValidationError(
         message="Graph is invalid",
@@ -562,13 +545,15 @@ async def test_build_setup_requirements_filters_matched_credentials(
         graph=graph,
         error=error,
         session_id="test-session",
-        graph_credentials=graph_credentials,
     )
 
     assert isinstance(response, SetupRequirementsResponse)
-    # All fields matched => missing_credentials is empty, requirements still populated.
-    assert response.setup_info.user_readiness.missing_credentials == {}
-    assert len(response.setup_info.requirements["credentials"]) > 0
+    # missing_credentials and requirements["credentials"] must both be non-empty
+    # and share the same field keys (both come from build_missing_credentials_from_graph).
+    missing = response.setup_info.user_readiness.missing_credentials
+    requirements_creds = response.setup_info.requirements["credentials"]
+    assert len(missing) > 0
+    assert set(missing.keys()) == {c["id"] for c in requirements_creds}
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -589,7 +574,6 @@ async def test_build_setup_requirements_returns_none_for_non_credential_error(
         graph=graph,
         error=error,
         session_id="test-session",
-        graph_credentials={},
     )
 
     assert response is None
@@ -627,6 +611,50 @@ async def test_run_agent_schedule_credential_race_returns_setup_card(
             inputs={"test_input": "value"},
             schedule_name="My Schedule",
             cron="0 9 * * *",
+            dry_run=False,
+            session=session,
+        )
+
+    assert response is not None
+    assert isinstance(response.output, str)
+    result_data = orjson.loads(response.output)
+
+    # Should surface the inline credential card, NOT a generic error or a
+    # link redirecting to the Builder.
+    assert result_data.get("type") == "setup_requirements"
+    assert "setup_info" in result_data
+    assert result_data["setup_info"]["user_readiness"]["ready_to_run"] is False
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_run_agent_execution_credential_race_returns_setup_card(
+    setup_test_data,
+):
+    """End-to-end: if the executor raises a credential GraphValidationError
+    after _check_prerequisites passed, the user should still see the
+    inline credentials-setup card (not a generic error)."""
+    user = setup_test_data["user"]
+    store_submission = setup_test_data["store_submission"]
+
+    tool = RunAgentTool()
+    agent_marketplace_id = f"{user.email.split('@')[0]}/{store_submission.slug}"
+    session = make_session(user_id=user.id)
+
+    with patch(
+        "backend.copilot.tools.run_agent.execution_utils.add_graph_execution",
+        side_effect=GraphValidationError(
+            message="Graph is invalid",
+            node_errors={
+                "some-node-id": {"credentials": "These credentials are required"}
+            },
+        ),
+    ):
+        response = await tool.execute(
+            user_id=user.id,
+            session_id=str(uuid.uuid4()),
+            tool_call_id=str(uuid.uuid4()),
+            username_agent_slug=agent_marketplace_id,
+            inputs={"test_input": "value"},
             dry_run=False,
             session=session,
         )
