@@ -422,3 +422,101 @@ def test_subprocess_module_available():
     main reproduction test can spawn the CLI.  Catches sandboxed CI
     runners that block subprocess execution before the slow test runs."""
     assert subprocess.__name__ == "subprocess"
+
+
+# ---------------------------------------------------------------------------
+# Pure helper unit tests — pin the forbidden-pattern detection so any
+# future drift in the scanner is caught fast, even when the slow
+# end-to-end CLI subprocess test isn't runnable.
+# ---------------------------------------------------------------------------
+
+
+class TestScanRequestForForbiddenPatterns:
+    def test_clean_body_returns_empty_findings(self):
+        body = '{"model": "claude-opus-4.6", "messages": [{"role": "user", "content": "hi"}]}'
+        assert _scan_request_for_forbidden_patterns(body, {}) == []
+
+    def test_detects_tool_reference_in_body(self):
+        body = (
+            '{"messages": [{"role": "user", "content": ['
+            '{"type": "tool_reference", "tool_name": "find"}'
+            "]}]}"
+        )
+        findings = _scan_request_for_forbidden_patterns(body, {})
+        assert len(findings) == 1
+        assert "tool_reference" in findings[0]
+        assert "PR #12294" in findings[0]
+
+    def test_detects_context_management_in_body(self):
+        body = '{"betas": ["context-management-2025-06-27"]}'
+        findings = _scan_request_for_forbidden_patterns(body, {})
+        assert len(findings) == 1
+        assert "context-management-2025-06-27" in findings[0]
+        assert "#789" in findings[0]
+
+    def test_detects_context_management_in_anthropic_beta_header(self):
+        findings = _scan_request_for_forbidden_patterns(
+            body_text="{}",
+            headers={"anthropic-beta": "context-management-2025-06-27"},
+        )
+        assert len(findings) == 1
+        assert "anthropic-beta" in findings[0]
+
+    def test_detects_context_management_in_uppercase_header_name(self):
+        # HTTP header names are case-insensitive — make sure the
+        # scanner handles a server that didn't normalise names.
+        findings = _scan_request_for_forbidden_patterns(
+            body_text="{}",
+            headers={"Anthropic-Beta": "context-management-2025-06-27, other"},
+        )
+        assert len(findings) == 1
+
+    def test_ignores_unrelated_header_values(self):
+        findings = _scan_request_for_forbidden_patterns(
+            body_text="{}",
+            headers={
+                "authorization": "Bearer secret",
+                "anthropic-beta": "fine-grained-tool-streaming-2025",
+            },
+        )
+        assert findings == []
+
+    def test_detects_both_patterns_simultaneously(self):
+        body = (
+            '{"betas": ["context-management-2025-06-27"], '
+            '"messages": [{"role": "user", "content": ['
+            '{"type": "tool_reference", "tool_name": "find"}'
+            "]}]}"
+        )
+        findings = _scan_request_for_forbidden_patterns(body, {})
+        # Both patterns hit, in stable order: tool_reference then betas.
+        assert len(findings) == 2
+        assert "tool_reference" in findings[0]
+        assert "context-management-2025-06-27" in findings[1]
+
+
+class TestResolveCliPath:
+    def test_honours_explicit_env_var_when_file_exists(self, tmp_path, monkeypatch):
+        fake_cli = tmp_path / "fake-claude"
+        fake_cli.write_text("#!/bin/sh\necho fake\n")
+        fake_cli.chmod(0o755)
+        monkeypatch.setenv("CLAUDE_AGENT_CLI_PATH", str(fake_cli))
+        resolved = _resolve_cli_path()
+        assert resolved == fake_cli
+
+    def test_returns_none_when_env_var_points_to_missing_file(self, monkeypatch):
+        monkeypatch.setenv("CLAUDE_AGENT_CLI_PATH", "/nonexistent/path/to/claude")
+        # Should fall through to the bundled binary OR return None,
+        # but never raise.
+        resolved = _resolve_cli_path()
+        # We can't assert exact value (depends on whether the bundled
+        # CLI is installed in the test env) but the function must not
+        # raise — the caller is supposed to handle None gracefully.
+        assert resolved is None or resolved.is_file()
+
+    def test_falls_back_to_bundled_when_env_var_unset(self, monkeypatch):
+        monkeypatch.delenv("CLAUDE_AGENT_CLI_PATH", raising=False)
+        # Same caveat as above — returns the bundled path or None,
+        # depending on what's installed in the test env.
+        resolved = _resolve_cli_path()
+        assert resolved is None or resolved.is_file()
