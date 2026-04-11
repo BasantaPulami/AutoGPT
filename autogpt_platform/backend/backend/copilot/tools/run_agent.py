@@ -575,6 +575,16 @@ class RunAgentTool(BaseTool):
                 dry_run=dry_run,
             )
         except GraphValidationError as e:
+            # Reaching here means ``_check_prerequisites`` passed but the
+            # executor's validator re-raised milliseconds later — surface
+            # the race/drift so oncall can monitor how often this fires.
+            logger.warning(
+                "Race: GraphValidationError from add_graph_execution after "
+                "prereq check passed (user_id=%s graph_id=%s node_errors=%s)",
+                user_id,
+                graph.id,
+                dict(e.node_errors),
+            )
             creds_setup = self._build_setup_requirements_from_validation_error(
                 graph=graph,
                 error=e,
@@ -770,6 +780,16 @@ class RunAgentTool(BaseTool):
                 user_timezone=user_timezone,
             )
         except GraphValidationError as e:
+            # Reaching here means ``_check_prerequisites`` passed but the
+            # scheduler's re-validation raised — surface the race/drift so
+            # oncall can monitor how often this fires.
+            logger.warning(
+                "Race: GraphValidationError from add_execution_schedule after "
+                "prereq check passed (user_id=%s graph_id=%s node_errors=%s)",
+                user_id,
+                graph.id,
+                dict(e.node_errors),
+            )
             creds_setup = self._build_setup_requirements_from_validation_error(
                 graph=graph,
                 error=e,
