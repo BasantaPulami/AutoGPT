@@ -187,21 +187,26 @@ class ChatConfig(BaseSettings):
         "(same pattern as `api_key` / `base_url`).",
     )
     claude_agent_use_compat_proxy: bool = Field(
-        default=False,
+        default=True,
         description="Run the in-process OpenRouter compatibility proxy "
         "(`backend.copilot.sdk.openrouter_compat_proxy`) in front of the "
         "Claude Code CLI. The proxy strips `tool_reference` content "
         "blocks and the `context-management-2025-06-27` beta header / "
         "field from outgoing requests so newer SDK / CLI versions stop "
-        "tripping OpenRouter's stricter validation. Orthogonal to "
-        "`claude_agent_cli_path` — the override picks the binary, the "
-        "proxy rewrites whatever the binary sends. Reads from "
-        "`CHAT_CLAUDE_AGENT_USE_COMPAT_PROXY` or the unprefixed "
-        "`CLAUDE_AGENT_USE_COMPAT_PROXY` environment variable (same "
-        "pattern as `claude_agent_cli_path`). Only takes effect when "
-        "the session has an Anthropic-compatible upstream to forward "
-        "to — direct-Anthropic sessions skip the proxy entirely to "
-        "avoid silently re-routing through OpenRouter.",
+        "tripping OpenRouter's stricter validation. Defaults to True "
+        "because the bundled CLI in `claude-agent-sdk >= 0.1.55` requires "
+        "the proxy. Orthogonal to `claude_agent_cli_path` — the override "
+        "picks the binary, the proxy rewrites whatever the binary sends. "
+        "Disable explicitly only if you've pinned `claude-agent-sdk` to "
+        "a version whose bundled CLI is in "
+        "`_KNOWN_GOOD_BUNDLED_CLI_VERSIONS_DIRECT` (2.1.63 or 2.1.70). "
+        "Reads from `CHAT_CLAUDE_AGENT_USE_COMPAT_PROXY` or the "
+        "unprefixed `CLAUDE_AGENT_USE_COMPAT_PROXY` environment "
+        "variable (same pattern as `claude_agent_cli_path`). Only "
+        "takes effect when the session has an Anthropic-compatible "
+        "upstream to forward to — direct-Anthropic sessions skip the "
+        "proxy entirely to avoid silently re-routing through "
+        "OpenRouter.",
     )
     use_openrouter: bool = Field(
         default=True,
