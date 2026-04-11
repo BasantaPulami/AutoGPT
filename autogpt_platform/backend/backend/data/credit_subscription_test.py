@@ -480,8 +480,8 @@ async def test_create_subscription_checkout_no_price_raises():
 
 
 @pytest.mark.asyncio
-async def test_sync_subscription_from_stripe_unknown_price_preserves_current_tier():
-    """Unknown price_id should preserve the current tier (no DB write)."""
+async def test_sync_subscription_from_stripe_unknown_price_id_preserves_current_tier():
+    """Unknown price_id should preserve the current tier, not default to FREE (no DB write)."""
     mock_user = _make_user(tier=SubscriptionTier.PRO)
     stripe_sub = {
         "customer": "cus_123",
@@ -511,8 +511,8 @@ async def test_sync_subscription_from_stripe_unknown_price_preserves_current_tie
 
 
 @pytest.mark.asyncio
-async def test_sync_subscription_from_stripe_none_ld_price_preserves_current_tier():
-    """When LD returns None for price IDs, the current tier should be preserved."""
+async def test_sync_subscription_from_stripe_unconfigured_ld_price_preserves_current_tier():
+    """When LD flags are unconfigured (None price IDs), the current tier should be preserved, not defaulted to FREE."""
     mock_user = _make_user(tier=SubscriptionTier.PRO)
     stripe_sub = {
         "customer": "cus_123",

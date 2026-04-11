@@ -55,11 +55,11 @@ def test_get_subscription_status_pro(
     mock_user = Mock()
     mock_user.subscription_tier = SubscriptionTier.PRO
 
-    mock_price = Mock()
-    mock_price.unit_amount = 1999  # $19.99
-
     async def mock_price_id(tier: SubscriptionTier) -> str | None:
         return "price_pro" if tier == SubscriptionTier.PRO else None
+
+    async def mock_stripe_price_amount(price_id: str) -> int:
+        return 1999 if price_id == "price_pro" else 0
 
     mocker.patch(
         "backend.api.features.v1.get_user_by_id",
@@ -71,8 +71,8 @@ def test_get_subscription_status_pro(
         side_effect=mock_price_id,
     )
     mocker.patch(
-        "backend.api.features.v1.stripe.Price.retrieve",
-        return_value=mock_price,
+        "backend.api.features.v1._get_stripe_price_amount",
+        side_effect=mock_stripe_price_amount,
     )
 
     response = client.get("/credits/subscription")

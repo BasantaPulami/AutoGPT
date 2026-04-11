@@ -729,6 +729,21 @@ def _validate_checkout_redirect_url(url: str) -> bool:
     )
 
 
+@cached(ttl_seconds=300, maxsize=32)
+async def _get_stripe_price_amount(price_id: str) -> int:
+    """Return the unit_amount (cents) for a Stripe Price ID, cached for 5 minutes.
+
+    Stripe prices rarely change; caching avoids a ~200-600 ms Stripe round-trip on
+    every GET /credits/subscription page load and reduces quota consumption.
+    """
+    try:
+        price = await run_in_threadpool(stripe.Price.retrieve, price_id)
+        return price.unit_amount or 0
+    except stripe.StripeError:
+        logger.warning("Failed to retrieve Stripe price %s — returning 0", price_id)
+        return 0
+
+
 @v1_router.get(
     path="/credits/subscription",
     summary="Get subscription tier, current cost, and all tier costs",
@@ -747,15 +762,16 @@ async def get_subscription_status(
         *[get_subscription_price_id(t) for t in paid_tiers]
     )
 
-    tier_costs: dict[str, int] = {"FREE": 0, "ENTERPRISE": 0}
-    for t, price_id in zip(paid_tiers, price_ids):
-        cost = 0
-        if price_id:
-            try:
-                price = await run_in_threadpool(stripe.Price.retrieve, price_id)
-                cost = price.unit_amount or 0
-            except stripe.StripeError:
-                pass
+    tier_costs: dict[str, int] = {
+        SubscriptionTier.FREE.value: 0,
+        SubscriptionTier.ENTERPRISE.value: 0,
+    }
+
+    async def _cost(pid: str | None) -> int:
+        return await _get_stripe_price_amount(pid) if pid else 0
+
+    costs = await asyncio.gather(*[_cost(pid) for pid in price_ids])
+    for t, cost in zip(paid_tiers, costs):
         tier_costs[t.value] = cost
 
     return SubscriptionStatusResponse(
