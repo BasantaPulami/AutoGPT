@@ -38,8 +38,9 @@ from backend.copilot.tools import TOOL_REGISTRY
 from backend.copilot.tools.base import BaseTool
 from backend.util.truncate import truncate
 
-from .e2b_file_tools import E2B_FILE_TOOL_NAMES, E2B_FILE_TOOLS, bridge_and_annotate
-from .file_tools import (
+from .e2b_file_tools import (
+    E2B_FILE_TOOL_NAMES,
+    E2B_FILE_TOOLS,
     EDIT_TOOL_DESCRIPTION,
     EDIT_TOOL_NAME,
     EDIT_TOOL_SCHEMA,
@@ -49,6 +50,7 @@ from .file_tools import (
     WRITE_TOOL_DESCRIPTION,
     WRITE_TOOL_NAME,
     WRITE_TOOL_SCHEMA,
+    bridge_and_annotate,
     get_edit_tool_handler,
     get_read_tool_handler,
     get_write_tool_handler,
@@ -743,11 +745,11 @@ _SDK_BUILTIN_TOOLS = [*_SDK_BUILTIN_FILE_TOOLS, *_SDK_BUILTIN_ALWAYS]
 #   truncation.  When the LLM generates a very large `content` argument the
 #   API truncates the response mid-JSON and Ajv rejects it with the opaque
 #   "'file_path' is a required property" error, losing the user's work.
-#   All writes go through our MCP Write tool (file_tools.py) where we
+#   All writes go through our MCP Write tool (e2b_file_tools.py) where we
 #   control validation and return actionable guidance.
 # Edit: same truncation risk as Write — the CLI's built-in Edit has no
 #   defence against output-token truncation.  All edits go through our
-#   MCP Edit tool (file_tools.py).
+#   MCP Edit tool (e2b_file_tools.py).
 # Read: already disallowed in E2B mode (prod/dev) via
 #   _SDK_BUILTIN_FILE_TOOLS.  Disallow in non-E2B too for consistency
 #   — our MCP read_file handles tool-results paths via
