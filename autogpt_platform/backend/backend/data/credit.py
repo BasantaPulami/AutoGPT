@@ -1474,13 +1474,6 @@ async def sync_subscription_from_stripe(stripe_subscription: dict) -> None:
                 customer_id,
             )
             return
-        # When a new subscription becomes active (e.g. paid-to-paid tier upgrade
-        # via a fresh Checkout Session), cancel any OTHER active subscriptions
-        # for the same customer so the user isn't billed twice. We do this in
-        # the webhook rather than the API handler so that abandoning the
-        # checkout doesn't leave the user without a subscription.
-        if new_sub_id:
-            await _cleanup_stale_subscriptions(customer_id, new_sub_id)
     else:
         # A subscription was cancelled or ended. DO NOT unconditionally downgrade
         # to FREE — Stripe does not guarantee webhook delivery order, so a
@@ -1542,6 +1535,17 @@ async def sync_subscription_from_stripe(stripe_subscription: dict) -> None:
     # when the tier is already correct to avoid redundant writes on replay.
     if current_tier == tier:
         return
+    # When a new subscription becomes active (e.g. paid-to-paid tier upgrade
+    # via a fresh Checkout Session), cancel any OTHER active subscriptions for
+    # the same customer so the user isn't billed twice. We do this in the
+    # webhook rather than the API handler so that abandoning the checkout
+    # doesn't leave the user without a subscription.
+    # IMPORTANT: this runs AFTER the idempotency check above so that webhook
+    # replays for an already-applied event do NOT trigger another cleanup round
+    # (which could otherwise cancel a legitimately new subscription the user
+    # signed up for between the original event and its replay).
+    if status in ("active", "trialing") and new_sub_id:
+        await _cleanup_stale_subscriptions(customer_id, new_sub_id)
     await set_subscription_tier(user.id, tier)
 
 
