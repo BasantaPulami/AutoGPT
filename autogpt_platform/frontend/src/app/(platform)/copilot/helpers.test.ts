@@ -374,6 +374,31 @@ describe("deduplicateMessages", () => {
     expect(deduplicateMessages(msgs)).toHaveLength(4);
   });
 
+  it("does not create false positives for text parts that contain the separator", () => {
+    // "a|b" + "c" and "a" + "b|c" previously collided when joined with "|"
+    const msgs: UIMessage[] = [
+      makeMsgWithId("u1", "user", "hello"),
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { type: "text", text: "a|b" },
+          { type: "text", text: "c" },
+        ],
+      },
+      {
+        id: "a2",
+        role: "assistant",
+        parts: [
+          { type: "text", text: "a" },
+          { type: "text", text: "b|c" },
+        ],
+      },
+    ];
+    const result = deduplicateMessages(msgs);
+    expect(result).toHaveLength(3); // both assistant messages should be kept
+  });
+
   it("deduplicates by toolCallId for tool-call parts", () => {
     const msgs: UIMessage[] = [
       makeMsgWithId("u1", "user", "run tool"),

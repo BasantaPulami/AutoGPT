@@ -183,24 +183,27 @@ export function deduplicateMessages(messages: UIMessage[]): UIMessage[] {
     }
 
     if (msg.role === "assistant") {
-      const contentFingerprint = msg.parts
-        .map(
+      // JSON.stringify the parts array to avoid separator-collision false
+      // positives: a plain join("|") on ["a|b", "c"] and ["a", "b|c"]
+      // produces the same string. JSON encoding each element is unambiguous.
+      const contentFingerprint = JSON.stringify(
+        msg.parts.map(
           (p) =>
             ("text" in p && p.text) ||
             ("toolCallId" in p && p.toolCallId) ||
             "",
-        )
-        .join("|");
+        ),
+      );
 
-      if (contentFingerprint) {
+      if (contentFingerprint !== "[]") {
         // Scope to the preceding user message turn so that identical assistant
         // replies to *different* user prompts are preserved.
         // NOTE: A streaming (in-progress) assistant message has a partial
         // fingerprint that differs from its final form, so it would not be
-        // caught by this dedup. This is safe because the caller removes the
-        // in-progress assistant message before calling resumeStream() — see
-        // useCopilotStream.ts. If that removal is ever refactored away,
-        // partial streaming messages could bypass dedup.
+        // caught by this dedup. This is safe because every caller that invokes
+        // resumeStream() first strips the in-progress assistant message —
+        // handleReconnect, the wake-resync path, and the hydration-effect path
+        // all do this. See useCopilotStream.ts.
         const contextKey = `assistant:${lastUserMsgId}:${contentFingerprint}`;
         if (seenFingerprints.has(contextKey)) return false;
         seenFingerprints.add(contextKey);
