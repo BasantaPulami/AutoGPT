@@ -432,4 +432,37 @@ describe("deduplicateMessages", () => {
     const result = deduplicateMessages(msgs);
     expect(result).toHaveLength(2); // user + first tool call
   });
+
+  it("passes through assistant messages with empty parts without deduplicating them", () => {
+    // contentFingerprint === "[]" when parts is empty; the guard skips fingerprint
+    // tracking so these messages are never incorrectly deduplicated against each other.
+    const msgs: UIMessage[] = [
+      makeMsgWithId("u1", "user", "hello"),
+      { id: "a1", role: "assistant", parts: [] },
+      { id: "a2", role: "assistant", parts: [] },
+    ];
+    const result = deduplicateMessages(msgs);
+    expect(result).toHaveLength(3); // both empty-parts messages are kept
+  });
+
+  it("does not collapse structurally different no-text parts to the same fingerprint", () => {
+    // Parts lacking both 'text' and 'toolCallId' (e.g. step-start) previously
+    // all mapped to "" causing false-positive deduplication. Now JSON.stringify(p)
+    // is used as the fallback so distinct part shapes produce distinct fingerprints.
+    const msgs: UIMessage[] = [
+      makeMsgWithId("u1", "user", "hello"),
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [{ type: "step-start" }],
+      },
+      {
+        id: "a2",
+        role: "assistant",
+        parts: [{ type: "step-start" }],
+      },
+    ];
+    const result = deduplicateMessages(msgs);
+    expect(result).toHaveLength(2); // duplicate step-start messages are deduped
+  });
 });

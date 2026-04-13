@@ -186,12 +186,15 @@ export function deduplicateMessages(messages: UIMessage[]): UIMessage[] {
       // JSON.stringify the parts array to avoid separator-collision false
       // positives: a plain join("|") on ["a|b", "c"] and ["a", "b|c"]
       // produces the same string. JSON encoding each element is unambiguous.
+      // Fall back to JSON.stringify(p) for parts that carry neither a text nor
+      // a toolCallId (e.g. step-start) so structurally different parts never
+      // collapse to the same empty-string fingerprint element.
       const contentFingerprint = JSON.stringify(
         msg.parts.map(
           (p) =>
             ("text" in p && p.text) ||
             ("toolCallId" in p && p.toolCallId) ||
-            "",
+            JSON.stringify(p),
         ),
       );
 
