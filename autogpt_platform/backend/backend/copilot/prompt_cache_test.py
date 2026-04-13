@@ -366,6 +366,33 @@ class TestInjectUserContext:
         assert "hello world" in result
 
     @pytest.mark.asyncio
+    async def test_empty_understanding_fields_no_wrapper_injected(self):
+        """When format_understanding_for_prompt returns '' (all fields empty),
+        inject_user_context must NOT emit an empty <user_context>\\n\\n</user_context>
+        block — the bare sanitized message should be returned instead."""
+        from backend.copilot.model import ChatMessage
+        from backend.copilot.service import inject_user_context
+
+        understanding = MagicMock()
+        msg = ChatMessage(role="user", content="hello", sequence=0)
+
+        mock_db = MagicMock()
+        mock_db.update_message_content_by_sequence = AsyncMock(return_value=True)
+        with patch(
+            "backend.copilot.service.chat_db",
+            return_value=mock_db,
+        ), patch(
+            "backend.copilot.service.format_understanding_for_prompt",
+            return_value="",
+        ):
+            result = await inject_user_context(understanding, "hello", "sess-1", [msg])
+
+        assert result is not None
+        # No wrapper block should be present when context is empty.
+        assert "<user_context>" not in result
+        assert result == "hello"
+
+    @pytest.mark.asyncio
     async def test_understanding_with_xml_chars_is_escaped(self):
         """Free-text fields in the understanding must not be able to break
         out of the trusted `<user_context>` block by including a literal

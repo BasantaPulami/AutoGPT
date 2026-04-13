@@ -217,7 +217,22 @@ async def _fetch_langfuse_prompt() -> str | None:
             label=label,
             cache_ttl_seconds=config.langfuse_prompt_cache_ttl,
         )
-        return prompt.compile(users_information="")
+        compiled = prompt.compile(users_information="")
+        # Guard the caching contract: if the Langfuse template is ever updated
+        # to re-embed the {users_information} placeholder, the compiled text
+        # will contain a literal "{users_information}" (because we passed an
+        # empty string). That would mean user-specific text is back in the
+        # system prompt, defeating cross-session caching. Log an error so the
+        # regression is immediately visible in production observability.
+        if "{users_information}" in compiled:
+            logger.error(
+                "Langfuse prompt still contains {users_information} placeholder — "
+                "user context has been re-embedded in the system prompt, which "
+                "breaks cross-session LLM prompt caching. Remove the placeholder "
+                "from the Langfuse template and inject user context via "
+                "inject_user_context() instead."
+            )
+        return compiled
     except Exception as e:
         logger.warning(f"Failed to fetch prompt from Langfuse, using default: {e}")
         return None
@@ -282,6 +297,13 @@ async def inject_user_context(
         ``None`` -- only when ``session_messages`` contains **no** user-role
         message at all.
     """
+    # The SDK and baseline services call strip_user_context_tags (an alias for
+    # sanitize_user_supplied_context) at their entry points on every turn, so
+    # `message` is already clean when inject_user_context is reached on turn 1.
+    # The call below is therefore technically redundant for those callers, but
+    # it is kept so that this function remains safe to call directly (e.g. from
+    # tests) without prior sanitization — and because the operation is
+    # idempotent (a second pass over already-clean text is a no-op).
     sanitized_message = sanitize_user_supplied_context(message)
 
     if understanding is None:
@@ -291,8 +313,14 @@ async def inject_user_context(
         final_message = sanitized_message
     else:
         raw_ctx = format_understanding_for_prompt(understanding)
-        user_ctx = _sanitize_user_context_field(raw_ctx)
-        final_message = format_user_context_prefix(user_ctx) + sanitized_message
+        if not raw_ctx:
+            # All BusinessUnderstanding fields are empty/None — injecting an
+            # empty <user_context>\n\n</user_context> block adds no value and
+            # wastes tokens. Fall back to the bare sanitized message instead.
+            final_message = sanitized_message
+        else:
+            user_ctx = _sanitize_user_context_field(raw_ctx)
+            final_message = format_user_context_prefix(user_ctx) + sanitized_message
 
     for session_msg in session_messages:
         if session_msg.role == "user":
