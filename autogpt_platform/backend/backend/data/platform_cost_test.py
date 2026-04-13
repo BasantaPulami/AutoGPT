@@ -334,6 +334,65 @@ class TestGetPlatformCostDashboard:
         assert dashboard.avg_cost_microdollars_per_request == 0.0
 
     @pytest.mark.asyncio
+    async def test_cost_bearing_request_count_nonzero_when_filtering_by_tokens(self):
+        """When filtering by tracking_type='tokens', cost_bearing_request_count
+        must still reflect cost_usd rows because by_user_tracking_groups is
+        queried without the tracking_type constraint."""
+        # total_agg only has a tokens row (because of the tracking_type filter)
+        total_row = _make_group_by_row(
+            provider="openai", tracking_type="tokens", cost=0, count=5
+        )
+        # by_user_tracking_groups returns BOTH rows (no tracking_type filter)
+        user_tracking_cost_usd_row = {
+            "_count": {"_all": 7},
+            "userId": "u1",
+            "trackingType": "cost_usd",
+        }
+        user_tracking_tokens_row = {
+            "_count": {"_all": 5},
+            "userId": "u1",
+            "trackingType": "tokens",
+        }
+
+        mock_actions = MagicMock()
+        mock_actions.group_by = AsyncMock(
+            side_effect=[
+                [total_row],  # by_provider
+                [{"_sum": {}, "_count": {"_all": 5}, "userId": "u1"}],  # by_user
+                [
+                    user_tracking_cost_usd_row,
+                    user_tracking_tokens_row,
+                ],  # by_user_tracking
+                [{"userId": "u1"}],  # distinct users
+                [total_row],  # total agg
+            ]
+        )
+        mock_actions.find_many = AsyncMock(return_value=[])
+
+        with (
+            patch(
+                "backend.data.platform_cost.PrismaLog.prisma",
+                return_value=mock_actions,
+            ),
+            patch(
+                "backend.data.platform_cost.PrismaUser.prisma",
+                return_value=mock_actions,
+            ),
+            patch(
+                "backend.data.platform_cost.query_raw_with_schema",
+                new_callable=AsyncMock,
+                side_effect=[[], []],
+            ),
+        ):
+            dashboard = await get_platform_cost_dashboard(tracking_type="tokens")
+
+        # by_user has 1 user with 5 total requests (tokens rows only due to filter)
+        # but per-user cost_bearing count should be 7 (from cost_usd rows in
+        # by_user_tracking_groups which uses where_no_tracking_type)
+        assert len(dashboard.by_user) == 1
+        assert dashboard.by_user[0].cost_bearing_request_count == 7
+
+    @pytest.mark.asyncio
     async def test_cache_tokens_aggregated_not_hardcoded(self):
         """cache_read_tokens and cache_creation_tokens must be read from the
         DB aggregation, not hardcoded to 0 (regression guard for Sentry report)."""
@@ -455,6 +514,41 @@ class TestGetPlatformCostDashboard:
         raw_params = raw_call_args[1:]  # first arg is the query template
         assert "openai" in raw_params
         assert "u1" in raw_params
+
+    @pytest.mark.asyncio
+    async def test_user_tracking_groups_excludes_tracking_type_filter(self):
+        """by_user_tracking_groups must NOT apply the tracking_type filter so that
+        cost_usd rows are always included even when the caller filters by 'tokens'."""
+        mock_actions = MagicMock()
+        mock_actions.group_by = AsyncMock(side_effect=[[], [], [], [], []])
+        mock_actions.find_many = AsyncMock(return_value=[])
+
+        with (
+            patch(
+                "backend.data.platform_cost.PrismaLog.prisma",
+                return_value=mock_actions,
+            ),
+            patch(
+                "backend.data.platform_cost.PrismaUser.prisma",
+                return_value=mock_actions,
+            ),
+            patch(
+                "backend.data.platform_cost.query_raw_with_schema",
+                new_callable=AsyncMock,
+                side_effect=[[], []],
+            ),
+        ):
+            await get_platform_cost_dashboard(tracking_type="tokens")
+
+        # Call index 2 is by_user_tracking_groups (0=by_provider, 1=by_user,
+        # 2=by_user_tracking, 3=distinct_users, 4=total_agg).
+        tracking_call_where = mock_actions.group_by.call_args_list[2][1]["where"]
+        # The main filter applies trackingType; by_user_tracking must NOT.
+        assert "trackingType" not in tracking_call_where
+        # Other filters (e.g., date range, provider) are still passed through.
+        # The first call (by_provider) should have trackingType in its where dict.
+        provider_call_where = mock_actions.group_by.call_args_list[0][1]["where"]
+        assert "trackingType" in provider_call_where
 
 
 def _make_prisma_log_row(
