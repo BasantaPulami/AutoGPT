@@ -115,6 +115,14 @@ _USER_CONTEXT_PREFIX_RE = re.compile(
 #   `<user_context>bad</user_context>extra</user_context>`
 # are consumed in full rather than leaving `extra</user_context>` as raw
 # text that could confuse an LLM parser.
+#
+# Trade-off: if a user types two separate `<user_context>` blocks with
+# legitimate text between them (e.g. `<user_context>A</user_context> and
+# compare with <user_context>B</user_context>`), the greedy match will
+# consume the inter-tag text too.  This is acceptable because user-supplied
+# `<user_context>` tags are always malicious (the tag is server-only) and
+# should be removed entirely; preserving text between attacker tags is not
+# a correctness requirement.
 _USER_CONTEXT_ANYWHERE_RE = re.compile(
     rf"<{USER_CONTEXT_TAG}>.*</{USER_CONTEXT_TAG}>\s*", re.DOTALL
 )
