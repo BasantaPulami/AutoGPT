@@ -16,7 +16,7 @@ const ADMIN_LLM_PATH = "/admin/llms";
 async function adminFetch(
   endpoint: string,
   options: RequestInit = {},
-): Promise<{ status: number; data: any }> {
+): Promise<{ status: number; data: unknown }> {
   const baseUrl = environment.getAGPTServerBaseUrl();
   const token = await getServerAuthToken();
   const headers = createRequestHeaders(
@@ -33,7 +33,7 @@ async function adminFetch(
     },
   });
 
-  let data: any = null;
+  let data: unknown = null;
   if (response.status !== 204) {
     const contentType = response.headers.get("content-type");
     const text = await response.text();
@@ -49,8 +49,9 @@ async function adminFetch(
   }
 
   if (!response.ok) {
-    const errorMessage =
-      data?.detail || data?.message || `HTTP ${response.status}`;
+    const errorData = data as Record<string, string> | null;
+  const errorMessage =
+    errorData?.detail || errorData?.message || `HTTP ${response.status}`;
     throw new Error(errorMessage);
   }
 
@@ -201,7 +202,7 @@ export async function createLlmModelAction(formData: FormData) {
     description: formData.get("description")
       ? String(formData.get("description"))
       : undefined,
-    provider_id: getRequiredFormField(formData, "provider_id", "Provider"),
+    provider_name: getRequiredFormField(formData, "provider_id", "Provider"),
     creator_id: formData.get("creator_id")
       ? String(formData.get("creator_id"))
       : undefined,
@@ -236,20 +237,23 @@ export async function createLlmModelAction(formData: FormData) {
 export async function updateLlmModelAction(formData: FormData) {
   const modelSlug = getRequiredFormField(formData, "model_id", "Model");
 
-  const payload: Record<string, any> = {};
+  const payload: Record<string, string | number | boolean> = {};
 
-  if (formData.get("display_name"))
-    payload.display_name = String(formData.get("display_name"));
-  if (formData.get("description"))
-    payload.description = String(formData.get("description"));
-  if (formData.get("provider_id"))
-    payload.provider_id = String(formData.get("provider_id"));
-  if (formData.get("creator_id"))
-    payload.creator_id = String(formData.get("creator_id"));
-  if (formData.get("context_window"))
-    payload.context_window = Number(formData.get("context_window"));
-  if (formData.get("max_output_tokens"))
-    payload.max_output_tokens = Number(formData.get("max_output_tokens"));
+  const displayName = formData.get("display_name");
+  if (displayName !== null && String(displayName).trim())
+    payload.display_name = String(displayName).trim();
+  const description = formData.get("description");
+  if (description !== null)
+    payload.description = String(description);
+  const creatorId = formData.get("creator_id");
+  if (creatorId !== null && String(creatorId).trim())
+    payload.creator_id = String(creatorId).trim();
+  const contextWindow = formData.get("context_window");
+  if (contextWindow !== null && String(contextWindow).trim())
+    payload.context_window = Number(contextWindow);
+  const maxOutputTokens = formData.get("max_output_tokens");
+  if (maxOutputTokens !== null && String(maxOutputTokens).trim())
+    payload.max_output_tokens = Number(maxOutputTokens);
   if (formData.has("is_enabled"))
     payload.is_enabled = formData.getAll("is_enabled").includes("on");
 
@@ -264,7 +268,9 @@ export async function toggleLlmModelAction(formData: FormData): Promise<void> {
   const modelSlug = getRequiredFormField(formData, "model_id", "Model");
   const shouldEnable = formData.get("is_enabled") === "true";
 
-  const payload: Record<string, any> = { is_enabled: shouldEnable };
+  const payload: Record<string, string | number | boolean> = {
+    is_enabled: shouldEnable,
+  };
 
   // Migration params (only when disabling)
   if (!shouldEnable) {
@@ -363,13 +369,15 @@ export async function updateLlmCreatorAction(
 ): Promise<void> {
   const creatorName = getRequiredFormField(formData, "creator_id", "Creator");
 
-  const payload: Record<string, any> = {};
-  if (formData.get("display_name"))
-    payload.display_name = String(formData.get("display_name"));
-  if (formData.get("description"))
-    payload.description = String(formData.get("description"));
-  if (formData.get("website_url"))
-    payload.website_url = String(formData.get("website_url"));
+  const payload: Record<string, string> = {};
+  const displayName = formData.get("display_name");
+  if (displayName !== null && String(displayName).trim())
+    payload.display_name = String(displayName).trim();
+  const description = formData.get("description");
+  if (description !== null) payload.description = String(description);
+  const websiteUrl = formData.get("website_url");
+  if (websiteUrl !== null && String(websiteUrl).trim())
+    payload.website_url = String(websiteUrl).trim();
 
   await adminFetch(`/api/llm/creators/${creatorName}`, {
     method: "PATCH",
