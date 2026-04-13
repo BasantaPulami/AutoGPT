@@ -2220,8 +2220,24 @@ async def stream_chat_completion_sdk(
                     sid,
                 )
 
+        # When exclude_dynamic_sections is enabled, use SystemPromptPreset
+        # so the Claude Code default prompt is a cacheable prefix shared
+        # across all users.  Our custom prompt is appended after it and
+        # dynamic sections (working dir, git status, auto-memory) are
+        # excluded from the prefix — giving us cross-user cache hits that
+        # reduce input token cost by ~90%.
+        if config.claude_agent_exclude_dynamic_sections:
+            system_prompt_value: str | dict[str, Any] = {
+                "type": "preset",
+                "preset": "claude_code",
+                "append": system_prompt,
+                "exclude_dynamic_sections": True,
+            }
+        else:
+            system_prompt_value = system_prompt
+
         sdk_options_kwargs: dict[str, Any] = {
-            "system_prompt": system_prompt,
+            "system_prompt": system_prompt_value,
             "mcp_servers": {"copilot": mcp_server},
             "allowed_tools": allowed,
             "disallowed_tools": disallowed,
