@@ -343,12 +343,10 @@ export const useCopilotUIStore = create<CopilotUIState>((set) => ({
   restoreSessionMode: (sessionId) =>
     set((state) => {
       const mode = state.sessionModes.get(sessionId);
-      if (mode && mode !== state.copilotMode) {
-        storage.set(Key.COPILOT_MODE, mode);
-        return { copilotMode: mode };
-      }
-      // Return same state reference to skip unnecessary re-render
-      return state;
+      if (!mode) return state;
+      storage.set(Key.COPILOT_MODE, mode);
+      if (mode === state.copilotMode) return state;
+      return { copilotMode: mode };
     }),
   removeSessionMode: (sessionId) =>
     set((state) => {
