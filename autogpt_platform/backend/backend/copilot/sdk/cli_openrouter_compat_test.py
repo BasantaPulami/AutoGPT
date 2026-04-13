@@ -72,9 +72,9 @@ logger = logging.getLogger(__name__)
 # Forbidden patterns we scan for in captured request bodies
 # ---------------------------------------------------------------------------
 
-# Substring of the `tool_reference` content block that breaks OpenRouter's
-# Beta string OpenRouter rejects in upstream issue #789. Can appear in
-# either `betas` arrays or the `anthropic-beta` header value.
+# Substring of the context-management beta string that OpenRouter rejects
+# (upstream issue #789).  Can appear in either `betas` arrays or the
+# `anthropic-beta` header value sent by the CLI.
 _FORBIDDEN_CONTEXT_MANAGEMENT_BETA = "context-management-2025-06-27"
 
 

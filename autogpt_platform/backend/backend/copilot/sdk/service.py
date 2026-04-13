@@ -2241,6 +2241,9 @@ async def stream_chat_completion_sdk(
             # max_thinking_tokens: cap extended thinking output per LLM call.
             # Thinking tokens are billed at output rate ($75/M for Opus) and
             # account for ~54% of total cost.  8192 is the default.
+            # Intentionally sent for all models including Sonnet — the CLI
+            # silently ignores this field for non-Opus models (those without
+            # native extended thinking), so it is safe to pass unconditionally.
             "max_thinking_tokens": config.claude_agent_max_thinking_tokens,
         }
         # effort: only set for models with extended thinking (Opus).

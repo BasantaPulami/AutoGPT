@@ -48,6 +48,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Max MCP response size in chars. 100K chars ≈ 25K tokens. The SDK writes oversized results to tool-results/ files.
+# Set to 100K (down from a previous 500K) because the SDK already reads back large results from disk via
+# tool-results/ — sending 500K chars inline bloated the context window and caused cache-miss thrashing.
+# 100K keeps the common case (block output, API responses) in-band without punishing the context budget.
 _MCP_MAX_CHARS = 100_000
 
 # MCP server naming - the SDK prefixes tool names as "mcp__{server_name}__{tool}"

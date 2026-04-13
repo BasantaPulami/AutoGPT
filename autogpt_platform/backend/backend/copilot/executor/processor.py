@@ -171,8 +171,11 @@ class CoPilotProcessor:
         # executable.  First spawn pays ~1.2 s; subsequent spawns ~0.65 s.
         # Read cli_path directly from env here so _prewarm_cli does not have
         # to construct a ChatConfig() (which can raise and abort the worker).
-        cli_path = os.getenv("CLAUDE_AGENT_CLI_PATH") or os.getenv(
-            "CHAT_CLAUDE_AGENT_CLI_PATH"
+        # Priority: CHAT_CLAUDE_AGENT_CLI_PATH (prefixed) first, then
+        # CLAUDE_AGENT_CLI_PATH (unprefixed) — matches config.py's validator
+        # order so both paths resolve to the same binary.
+        cli_path = os.getenv("CHAT_CLAUDE_AGENT_CLI_PATH") or os.getenv(
+            "CLAUDE_AGENT_CLI_PATH"
         )
         self._prewarm_cli(cli_path=cli_path or None)
 
