@@ -405,6 +405,11 @@ async def _read_file_handler(args: dict[str, Any]) -> dict[str, Any]:
         return _mcp_err("Invalid offset/limit \u2014 must be integers.")
 
     if not file_path:
+        if "offset" in args or "limit" in args:
+            return _mcp_err(
+                "Your Read call was truncated (file_path missing but "
+                "offset/limit were present). Resend with the full file_path."
+            )
         return _mcp_err("file_path is required")
 
     if file_path.startswith("workspace://"):

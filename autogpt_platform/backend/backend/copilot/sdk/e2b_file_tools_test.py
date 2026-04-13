@@ -27,6 +27,7 @@ from .e2b_file_tools import (
     WRITE_TOOL_NAME,
     WRITE_TOOL_SCHEMA,
     _check_sandbox_symlink_escape,
+    _edit_locks,
     _handle_edit_file,
     _handle_read_file,
     _handle_write_file,
@@ -36,6 +37,14 @@ from .e2b_file_tools import (
     bridge_to_sandbox,
     resolve_sandbox_path,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_edit_locks():
+    """Clear the module-level _edit_locks dict between tests to prevent bleed."""
+    _edit_locks.clear()
+    yield
+    _edit_locks.clear()
 
 
 def _expected_bridge_path(file_path: str, prefix: str = "/tmp") -> str:
@@ -1165,3 +1174,52 @@ class TestEditFileNotFound:
         )
         assert result["isError"]
         assert "working directory" in result["content"][0]["text"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Concurrent edit locking
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentEditLocking:
+    @pytest.mark.asyncio
+    async def test_concurrent_edits_are_serialised(self, sdk_cwd):
+        """Two parallel Edit calls on the same file must not race.
+
+        Each edit appends a unique line by replacing a sentinel. Without the
+        per-path lock one update would silently overwrite the other; with the
+        lock both replacements must be present in the final file.
+        """
+        import asyncio as _asyncio
+
+        path = os.path.join(sdk_cwd, "concurrent.txt")
+        with open(path, "w") as f:
+            f.write("line1\nline2\n")
+
+        # Two coroutines both replace a *different* substring — they must not
+        # race through the read-modify-write cycle.
+        async def edit_a():
+            return await _handle_edit_file(
+                {
+                    "file_path": "concurrent.txt",
+                    "old_string": "line1",
+                    "new_string": "EDITED_A",
+                }
+            )
+
+        async def edit_b():
+            return await _handle_edit_file(
+                {
+                    "file_path": "concurrent.txt",
+                    "old_string": "line2",
+                    "new_string": "EDITED_B",
+                }
+            )
+
+        results = await _asyncio.gather(edit_a(), edit_b())
+        for r in results:
+            assert not r["isError"], r["content"][0]["text"]
+
+        final = open(path).read()
+        assert "EDITED_A" in final
+        assert "EDITED_B" in final

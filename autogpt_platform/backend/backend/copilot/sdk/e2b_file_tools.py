@@ -418,7 +418,7 @@ async def _handle_write_file(args: dict[str, Any]) -> dict[str, Any]:
             error=True,
         )
 
-    msg = f"Successfully wrote to {resolved}"
+    msg = f"Successfully wrote to {file_path}"
     if len(content) > _LARGE_CONTENT_WARN_CHARS:
         logger.warning(
             "[Write] large inline content (%d chars) for %s",
@@ -553,7 +553,7 @@ async def _handle_edit_file(args: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             return _mcp(f"Failed to write {file_path}: {exc}", error=True)
 
-    return _mcp(f"Edited {resolved} ({count} replacement{'s' if count > 1 else ''})")
+    return _mcp(f"Edited {file_path} ({count} replacement{'s' if count > 1 else ''})")
 
 
 async def _handle_glob(args: dict[str, Any]) -> dict[str, Any]:
