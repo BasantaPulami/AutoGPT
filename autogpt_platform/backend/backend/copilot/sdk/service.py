@@ -30,6 +30,7 @@ class _SystemPromptPreset(TypedDict):
     append: str
     exclude_dynamic_sections: bool
 
+
 if TYPE_CHECKING:
     from backend.copilot.permissions import CopilotPermissions
 
