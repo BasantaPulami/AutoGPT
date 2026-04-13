@@ -492,8 +492,16 @@ def gated_processor(monkeypatch):
         fake_charge_extra,
     )
 
-    def fake_low_balance(self, **kwargs):
-        calls["handle_low_balance"].append(kwargs)
+    def fake_low_balance(
+        self, db_client, user_id, current_balance, transaction_cost
+    ):
+        calls["handle_low_balance"].append(
+            {
+                "user_id": user_id,
+                "current_balance": current_balance,
+                "transaction_cost": transaction_cost,
+            }
+        )
 
     monkeypatch.setattr(
         manager.ExecutionProcessor,
