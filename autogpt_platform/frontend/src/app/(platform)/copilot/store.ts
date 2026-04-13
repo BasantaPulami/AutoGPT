@@ -83,7 +83,7 @@ function isCopilotMode(value: unknown): value is CopilotMode {
   return value === "fast" || value === "extended_thinking";
 }
 
-function getPersistedSessionModes(): Map<string, CopilotMode> {
+export function getPersistedSessionModes(): Map<string, CopilotMode> {
   if (!isClient) return new Map();
   try {
     const raw = storage.get(Key.COPILOT_SESSION_MODES);

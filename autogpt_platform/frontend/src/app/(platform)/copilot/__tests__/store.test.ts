@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
-import { useCopilotUIStore } from "../store";
+import { getPersistedSessionModes, useCopilotUIStore } from "../store";
 
 vi.mock("@sentry/nextjs", () => ({
   captureException: vi.fn(),
@@ -251,6 +251,7 @@ describe("useCopilotUIStore", () => {
     });
 
     it("ignores invalid mode strings from corrupt localStorage", () => {
+      // Write corrupt data to localStorage
       window.localStorage.setItem(
         "copilot-session-modes",
         JSON.stringify([
@@ -260,20 +261,13 @@ describe("useCopilotUIStore", () => {
           "garbage",
         ]),
       );
-      // Re-initialise by reading state directly via the getter used at init time
-      // (simulate a fresh page load by clearing and re-setting the store)
-      useCopilotUIStore.getState().clearCopilotLocalData();
-      window.localStorage.setItem(
-        "copilot-session-modes",
-        JSON.stringify([
-          ["session-valid", "fast"],
-          ["session-bad", "invalid_mode"],
-        ]),
-      );
-      // Force store re-read by calling the internal persistence path
-      useCopilotUIStore.getState().recordSessionMode("__probe__");
-      // The corrupt entry should never be readable as a valid CopilotMode
+      // Simulate a fresh page load by re-parsing localStorage into the store
+      // (mirrors what the store initialiser does on mount)
+      useCopilotUIStore.setState({ sessionModes: getPersistedSessionModes() });
       const state = useCopilotUIStore.getState();
+      // Valid entry should be present
+      expect(state.sessionModes.get("session-valid")).toBe("fast");
+      // Corrupt entry must be silently dropped — never readable as a valid CopilotMode
       expect(state.sessionModes.get("session-bad")).toBeUndefined();
     });
   });
@@ -302,6 +296,7 @@ describe("useCopilotUIStore", () => {
       expect(
         window.localStorage.getItem("copilot-completed-sessions"),
       ).toBeNull();
+      expect(window.localStorage.getItem("copilot-session-modes")).toBeNull();
     });
   });
 
