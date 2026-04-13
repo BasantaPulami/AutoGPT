@@ -100,4 +100,14 @@ def build_sdk_env(
     # that OpenRouter rejects.  Safe for all modes — direct Anthropic ignores it.
     env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"] = "1"
 
+    # Disable gzip on API responses to prevent ZlibError decompression
+    # failures (see oven-sh/bun#23149, anthropics/claude-code#18302).
+    # Appended to any existing ANTHROPIC_CUSTOM_HEADERS (OpenRouter mode
+    # already sets trace headers above).
+    accept_encoding = "Accept-Encoding: identity"
+    existing = env.get("ANTHROPIC_CUSTOM_HEADERS", "")
+    env["ANTHROPIC_CUSTOM_HEADERS"] = (
+        f"{existing}\n{accept_encoding}" if existing else accept_encoding
+    )
+
     return env
