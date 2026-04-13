@@ -382,11 +382,11 @@ describe("deduplicateMessages", () => {
         role: "assistant",
         parts: [
           {
-            type: "tool-invocation",
+            type: "dynamic-tool",
             toolCallId: "tc-1",
             toolName: "test",
-            args: {},
-            state: "call",
+            state: "input-available",
+            input: {},
           },
         ],
       },
@@ -395,11 +395,11 @@ describe("deduplicateMessages", () => {
         role: "assistant",
         parts: [
           {
-            type: "tool-invocation",
+            type: "dynamic-tool",
             toolCallId: "tc-1",
             toolName: "test",
-            args: {},
-            state: "call",
+            state: "input-available",
+            input: {},
           },
         ],
       },
