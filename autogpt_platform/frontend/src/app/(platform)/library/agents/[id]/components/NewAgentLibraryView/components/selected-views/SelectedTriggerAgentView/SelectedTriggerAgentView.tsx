@@ -33,15 +33,16 @@ export function SelectedTriggerAgentView({
 
   const triggerAgent = data?.find((t) => t.id === triggerAgentId);
 
-  const { data: schedules } = useGetV1ListExecutionSchedulesForAGraph(
-    triggerAgent?.graph_id || "",
-    {
-      query: {
-        enabled: !!triggerAgent?.graph_id,
-        select: okData,
-      },
+  const {
+    data: schedules,
+    isLoading: isSchedulesLoading,
+    error: schedulesError,
+  } = useGetV1ListExecutionSchedulesForAGraph(triggerAgent?.graph_id || "", {
+    query: {
+      enabled: !!triggerAgent?.graph_id,
+      select: okData,
     },
-  );
+  });
 
   const rawUserTimezone = useUserTimezone();
   const displayTimezone =
@@ -50,13 +51,14 @@ export function SelectedTriggerAgentView({
       : Intl.DateTimeFormat().resolvedOptions().timeZone;
   const schedule = schedules?.[0];
 
-  if (error) {
+  if (error || schedulesError) {
+    const queryError = error ?? schedulesError;
     return (
       <ErrorCard
         responseError={{
           message:
-            (error as unknown as { message?: string })?.message ||
-            "Failed to load trigger agent",
+            (queryError as unknown as { message?: string })?.message ||
+            "Failed to load trigger data",
         }}
         context="trigger agent"
       />
@@ -143,7 +145,7 @@ export function SelectedTriggerAgentView({
               </RunDetailCard>
             )}
 
-            {!schedule && !isLoading && (
+            {!schedule && !isSchedulesLoading && (
               <RunDetailCard title="Schedule">
                 <Text variant="body" className="!text-zinc-500">
                   No schedule configured for this trigger agent.
