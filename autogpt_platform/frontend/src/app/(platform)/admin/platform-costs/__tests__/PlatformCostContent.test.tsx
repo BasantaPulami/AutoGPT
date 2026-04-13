@@ -134,9 +134,12 @@ describe("PlatformCostContent", () => {
     await waitFor(() =>
       expect(document.querySelector(".animate-pulse")).toBeNull(),
     );
-    // Verify the two summary cards that show $0.0000 — Known Cost and Estimated Total
+    // Known Cost and Estimated Total cards render $0.0000
+    expect(screen.getByText("Known Cost")).toBeDefined();
+    expect(screen.getByText("Estimated Total")).toBeDefined();
+    // All cost summary cards (Known Cost, Estimated Total, Avg Cost, P50/P75/P95/P99) show $0.0000
     const zeroCostItems = screen.getAllByText("$0.0000");
-    expect(zeroCostItems.length).toBe(2);
+    expect(zeroCostItems.length).toBe(7);
     expect(screen.getByText("No cost data yet")).toBeDefined();
   });
 
