@@ -12189,14 +12189,7 @@
           },
           "cost_buckets": {
             "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "bucket": { "type": "string" },
-                "count": { "type": "integer" }
-              },
-              "required": ["bucket", "count"]
-            },
+            "items": { "$ref": "#/components/schemas/CostBucket" },
             "title": "Cost Buckets",
             "default": []
           }
@@ -12631,6 +12624,15 @@
         "type": "object",
         "title": "ProviderConstants",
         "description": "Model that exposes all provider names as a constant in the OpenAPI schema.\nThis is designed to be converted by Orval into a TypeScript constant."
+      },
+      "CostBucket": {
+        "properties": {
+          "bucket": { "type": "string", "title": "Bucket" },
+          "count": { "type": "integer", "title": "Count" }
+        },
+        "type": "object",
+        "required": ["bucket", "count"],
+        "title": "CostBucket"
       },
       "ProviderCostSummary": {
         "properties": {

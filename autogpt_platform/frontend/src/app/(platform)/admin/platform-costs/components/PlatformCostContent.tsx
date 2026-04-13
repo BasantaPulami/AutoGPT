@@ -8,7 +8,7 @@ import { ProviderTable } from "./ProviderTable";
 import { UserTable } from "./UserTable";
 import { LogsTable } from "./LogsTable";
 import { usePlatformCostContent } from "./usePlatformCostContent";
-import type { CostBucket } from "@/app/api/__generated__/models/platformCostDashboard";
+import type { CostBucket } from "@/app/api/__generated__/models/costBucket";
 
 interface Props {
   searchParams: {
