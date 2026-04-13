@@ -301,6 +301,14 @@ class TestGetPlatformCostDashboard:
                 "backend.data.platform_cost.PrismaUser.prisma",
                 return_value=mock_actions,
             ),
+            patch(
+                "backend.data.platform_cost.query_raw_with_schema",
+                new_callable=AsyncMock,
+                side_effect=[
+                    [{"p50": 1000, "p75": 2000, "p95": 4000, "p99": 5000}],
+                    [{"bucket": "$0-0.50", "count": 3}],
+                ],
+            ),
         ):
             dashboard = await get_platform_cost_dashboard()
 
@@ -313,6 +321,9 @@ class TestGetPlatformCostDashboard:
         assert dashboard.by_provider[0].total_duration_seconds == 10.5
         assert len(dashboard.by_user) == 1
         assert dashboard.by_user[0].email == "a***@b.com"
+        assert dashboard.cost_p50_microdollars == 1000
+        assert dashboard.cost_p95_microdollars == 4000
+        assert len(dashboard.cost_buckets) == 1
 
     @pytest.mark.asyncio
     async def test_cache_tokens_aggregated_not_hardcoded(self):
@@ -350,6 +361,14 @@ class TestGetPlatformCostDashboard:
                 "backend.data.platform_cost.PrismaUser.prisma",
                 return_value=mock_actions,
             ),
+            patch(
+                "backend.data.platform_cost.query_raw_with_schema",
+                new_callable=AsyncMock,
+                side_effect=[
+                    [{"p50": 0, "p75": 0, "p95": 0, "p99": 0}],
+                    [],
+                ],
+            ),
         ):
             dashboard = await get_platform_cost_dashboard()
 
@@ -373,6 +392,11 @@ class TestGetPlatformCostDashboard:
                 "backend.data.platform_cost.PrismaUser.prisma",
                 return_value=mock_actions,
             ),
+            patch(
+                "backend.data.platform_cost.query_raw_with_schema",
+                new_callable=AsyncMock,
+                side_effect=[[], []],
+            ),
         ):
             dashboard = await get_platform_cost_dashboard()
 
@@ -381,6 +405,8 @@ class TestGetPlatformCostDashboard:
         assert dashboard.total_users == 0
         assert dashboard.by_provider == []
         assert dashboard.by_user == []
+        assert dashboard.cost_p50_microdollars == 0
+        assert dashboard.cost_buckets == []
 
     @pytest.mark.asyncio
     async def test_passes_filters_to_queries(self):
@@ -398,6 +424,11 @@ class TestGetPlatformCostDashboard:
             patch(
                 "backend.data.platform_cost.PrismaUser.prisma",
                 return_value=mock_actions,
+            ),
+            patch(
+                "backend.data.platform_cost.query_raw_with_schema",
+                new_callable=AsyncMock,
+                side_effect=[[], []],
             ),
         ):
             await get_platform_cost_dashboard(
