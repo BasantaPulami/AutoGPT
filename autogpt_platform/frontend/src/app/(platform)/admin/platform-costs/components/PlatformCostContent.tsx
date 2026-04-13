@@ -205,7 +205,7 @@ export function PlatformCostContent({ searchParams }: Props) {
       {loading ? (
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            {[...Array(4)].map((_, i) => (
+            {[...Array(8)].map((_, i) => (
               <Skeleton key={i} className="h-20 rounded-lg" />
             ))}
           </div>
@@ -236,13 +236,9 @@ export function PlatformCostContent({ searchParams }: Props) {
               />
               <SummaryCard
                 label="Avg Cost / Request"
-                value={
-                  dashboard.avg_cost_microdollars_per_request
-                    ? formatMicrodollars(
-                        dashboard.avg_cost_microdollars_per_request,
-                      )
-                    : "$0.00"
-                }
+                value={formatMicrodollars(
+                  dashboard.avg_cost_microdollars_per_request ?? 0,
+                )}
                 subtitle="Known cost divided by total requests"
               />
               <SummaryCard

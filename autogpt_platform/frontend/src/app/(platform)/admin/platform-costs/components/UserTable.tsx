@@ -60,9 +60,7 @@ function UserTable({ data }: Props) {
               <td className="px-4 py-3 text-right">
                 {row.request_count > 0 && row.total_cost_microdollars > 0
                   ? formatMicrodollars(
-                      Math.round(
-                        row.total_cost_microdollars / row.request_count,
-                      ),
+                      row.total_cost_microdollars / row.request_count,
                     )
                   : "-"}
               </td>

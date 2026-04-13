@@ -293,10 +293,10 @@ async def get_platform_cost_dashboard(
                 where=where,
                 count=True,
             ),
-            # Total aggregate: group by provider (no limit) to sum across all
-            # matching rows. Summed in Python to get grand totals.
+            # Total aggregate: group by (provider, trackingType) so we can
+            # distinguish cost-bearing rows for per-request averages.
             PrismaLog.prisma().group_by(
-                by=["provider"],
+                by=["provider", "trackingType"],
                 where=where,
                 sum={
                     "costMicrodollars": True,
@@ -334,6 +334,11 @@ async def get_platform_cost_dashboard(
     total_input_tokens = sum(_si(r, "inputTokens") for r in total_agg_groups)
     total_output_tokens = sum(_si(r, "outputTokens") for r in total_agg_groups)
 
+    # Cost-bearing request count: only rows where trackingType == "cost_usd".
+    cost_bearing_requests = sum(
+        _ca(r) for r in total_agg_groups if r.get("trackingType") == "cost_usd"
+    )
+
     return PlatformCostDashboard(
         by_provider=[
             ProviderCostSummary(
@@ -368,13 +373,17 @@ async def get_platform_cost_dashboard(
         total_input_tokens=total_input_tokens,
         total_output_tokens=total_output_tokens,
         avg_input_tokens_per_request=(
-            total_input_tokens / total_requests if total_requests > 0 else 0.0
+            total_input_tokens / cost_bearing_requests
+            if cost_bearing_requests > 0
+            else 0.0
         ),
         avg_output_tokens_per_request=(
-            total_output_tokens / total_requests if total_requests > 0 else 0.0
+            total_output_tokens / cost_bearing_requests
+            if cost_bearing_requests > 0
+            else 0.0
         ),
         avg_cost_microdollars_per_request=(
-            total_cost / total_requests if total_requests > 0 else 0.0
+            total_cost / cost_bearing_requests if cost_bearing_requests > 0 else 0.0
         ),
     )
 
