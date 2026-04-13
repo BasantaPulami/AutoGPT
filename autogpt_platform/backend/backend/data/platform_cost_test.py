@@ -538,7 +538,7 @@ class TestGetPlatformCostDashboard:
         start = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
         mock_actions = MagicMock()
-        mock_actions.group_by = AsyncMock(side_effect=[[], [], [], [], [], []])
+        mock_actions.group_by = AsyncMock(side_effect=[[], [], [], [], []])
         mock_actions.find_many = AsyncMock(return_value=[])
 
         raw_mock = AsyncMock(side_effect=[[], []])
@@ -560,9 +560,10 @@ class TestGetPlatformCostDashboard:
                 start=start, provider="openai", user_id="u1"
             )
 
-        # group_by called 6 times (by_provider, by_user, by_user_tracking, distinct users,
-        # total agg filtered, total agg no-tracking-type)
-        assert mock_actions.group_by.await_count == 6
+        # group_by called 5 times (by_provider, by_user, by_user_tracking, distinct users,
+        # total agg filtered); the 6th call (total agg no-tracking-type) only runs
+        # when tracking_type is set.
+        assert mock_actions.group_by.await_count == 5
         # The where dict passed to the first call should include createdAt
         first_call_kwargs = mock_actions.group_by.call_args_list[0][1]
         assert "createdAt" in first_call_kwargs.get("where", {})
