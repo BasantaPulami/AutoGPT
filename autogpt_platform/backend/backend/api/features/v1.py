@@ -1555,7 +1555,9 @@ async def get_api_keys(
     ctx: Annotated[RequestContext, Security(get_request_context)],
 ) -> list[api_key_db.APIKeyInfo]:
     """List all API keys for the user"""
-    return await api_key_db.list_user_api_keys(user_id)
+    return await api_key_db.list_user_api_keys(
+        user_id, organization_id=ctx.org_id or None
+    )
 
 
 @v1_router.get(
@@ -1570,7 +1572,9 @@ async def get_api_key(
     ctx: Annotated[RequestContext, Security(get_request_context)],
 ) -> api_key_db.APIKeyInfo:
     """Get a specific API key"""
-    api_key = await api_key_db.get_api_key_by_id(key_id, user_id)
+    api_key = await api_key_db.get_api_key_by_id(
+        key_id, user_id, organization_id=ctx.org_id or None
+    )
     if not api_key:
         raise HTTPException(status_code=404, detail="API key not found")
     return api_key
@@ -1588,7 +1592,9 @@ async def delete_api_key(
     ctx: Annotated[RequestContext, Security(get_request_context)],
 ) -> api_key_db.APIKeyInfo:
     """Revoke an API key"""
-    return await api_key_db.revoke_api_key(key_id, user_id)
+    return await api_key_db.revoke_api_key(
+        key_id, user_id, organization_id=ctx.org_id or None
+    )
 
 
 @v1_router.post(
@@ -1603,7 +1609,9 @@ async def suspend_key(
     ctx: Annotated[RequestContext, Security(get_request_context)],
 ) -> api_key_db.APIKeyInfo:
     """Suspend an API key"""
-    return await api_key_db.suspend_api_key(key_id, user_id)
+    return await api_key_db.suspend_api_key(
+        key_id, user_id, organization_id=ctx.org_id or None
+    )
 
 
 @v1_router.put(
@@ -1620,5 +1628,5 @@ async def update_permissions(
 ) -> api_key_db.APIKeyInfo:
     """Update API key permissions"""
     return await api_key_db.update_api_key_permissions(
-        key_id, user_id, request.permissions
+        key_id, user_id, request.permissions, organization_id=ctx.org_id or None
     )

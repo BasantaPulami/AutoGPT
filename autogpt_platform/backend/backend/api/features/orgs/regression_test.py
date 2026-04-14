@@ -1959,7 +1959,6 @@ class TestPR14APIKeyTenancy:
         assert result.team_id_restriction == "team-restricted"
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="PR14: API key list not scoped by org")
     async def test_list_api_keys_scoped_by_org(self):
         """list_user_api_keys should accept organization_id and filter by it
         so org admins can view all keys belonging to the org."""
