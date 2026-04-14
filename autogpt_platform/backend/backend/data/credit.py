@@ -1401,6 +1401,57 @@ async def get_proration_credit_cents(user_id: str, monthly_cost_cents: int) -> i
         return 0
 
 
+async def modify_stripe_subscription_for_tier(
+    user_id: str, tier: SubscriptionTier
+) -> bool:
+    """Modify an existing Stripe subscription to a new paid tier using proration.
+
+    For paid→paid tier changes (e.g. PRO↔BUSINESS), modifying the existing
+    subscription is preferable to cancelling + creating a new one via Checkout:
+    Stripe handles proration automatically, crediting unused time on the old plan
+    and charging the pro-rated amount for the new plan in the same billing cycle.
+
+    Returns:
+        True  — a subscription was found and modified successfully.
+        False — no active/trialing subscription exists (e.g. admin-granted tier or
+                first-time paid signup); caller should fall back to Checkout.
+
+    Raises stripe.StripeError on API failures so callers can propagate a 502.
+    Raises ValueError when no Stripe price ID is configured for the tier.
+    """
+    price_id = await get_subscription_price_id(tier)
+    if not price_id:
+        raise ValueError(f"No Stripe price ID configured for tier {tier}")
+
+    customer_id = await get_stripe_customer_id(user_id)
+    for status in ("active", "trialing"):
+        subscriptions = await run_in_threadpool(
+            stripe.Subscription.list, customer=customer_id, status=status, limit=1
+        )
+        if not subscriptions.data:
+            continue
+        sub = subscriptions.data[0]
+        sub_id = sub["id"]
+        items = sub.get("items", {}).get("data", [])
+        if not items:
+            continue
+        item_id = items[0]["id"]
+        await run_in_threadpool(
+            stripe.Subscription.modify,
+            sub_id,
+            items=[{"id": item_id, "price": price_id}],
+            proration_behavior="create_prorations",
+        )
+        logger.info(
+            "modify_stripe_subscription_for_tier: modified sub %s for user %s → %s",
+            sub_id,
+            user_id,
+            tier,
+        )
+        return True
+    return False
+
+
 async def get_auto_top_up(user_id: str) -> AutoTopUpConfig:
     user = await get_user_by_id(user_id)
 

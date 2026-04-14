@@ -13,6 +13,7 @@ from backend.data.credit import (
     cancel_stripe_subscription,
     create_subscription_checkout,
     handle_subscription_payment_failure,
+    modify_stripe_subscription_for_tier,
     set_subscription_tier,
     sync_subscription_from_stripe,
 )
@@ -1016,3 +1017,81 @@ async def test_handle_subscription_payment_failure_passes_invoice_id_as_transact
         mock_add_tx.assert_called_once()
         _, kwargs = mock_add_tx.call_args
         assert kwargs.get("transaction_key") == "in_idempotency_test"
+
+
+@pytest.mark.asyncio
+async def test_modify_stripe_subscription_for_tier_modifies_existing_sub():
+    """modify_stripe_subscription_for_tier calls Subscription.modify and returns True."""
+    mock_sub = {
+        "id": "sub_abc",
+        "items": {"data": [{"id": "si_abc"}]},
+    }
+    mock_list = MagicMock()
+    mock_list.data = [mock_sub]
+
+    with (
+        patch(
+            "backend.data.credit.get_subscription_price_id",
+            new_callable=AsyncMock,
+            return_value="price_pro_monthly",
+        ),
+        patch(
+            "backend.data.credit.get_stripe_customer_id",
+            new_callable=AsyncMock,
+            return_value="cus_abc",
+        ),
+        patch(
+            "backend.data.credit.stripe.Subscription.list",
+            return_value=mock_list,
+        ),
+        patch(
+            "backend.data.credit.stripe.Subscription.modify",
+        ) as mock_modify,
+    ):
+        result = await modify_stripe_subscription_for_tier("user-1", SubscriptionTier.PRO)
+
+    assert result is True
+    mock_modify.assert_called_once_with(
+        "sub_abc",
+        items=[{"id": "si_abc", "price": "price_pro_monthly"}],
+        proration_behavior="create_prorations",
+    )
+
+
+@pytest.mark.asyncio
+async def test_modify_stripe_subscription_for_tier_returns_false_when_no_sub():
+    """modify_stripe_subscription_for_tier returns False when no active subscription exists."""
+    mock_list = MagicMock()
+    mock_list.data = []
+
+    with (
+        patch(
+            "backend.data.credit.get_subscription_price_id",
+            new_callable=AsyncMock,
+            return_value="price_pro_monthly",
+        ),
+        patch(
+            "backend.data.credit.get_stripe_customer_id",
+            new_callable=AsyncMock,
+            return_value="cus_abc",
+        ),
+        patch(
+            "backend.data.credit.stripe.Subscription.list",
+            return_value=mock_list,
+        ),
+    ):
+        result = await modify_stripe_subscription_for_tier("user-1", SubscriptionTier.PRO)
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_modify_stripe_subscription_for_tier_raises_on_missing_price_id():
+    """modify_stripe_subscription_for_tier raises ValueError when no price ID is configured."""
+    with patch(
+        "backend.data.credit.get_subscription_price_id",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        with pytest.raises(ValueError, match="No Stripe price ID configured"):
+            await modify_stripe_subscription_for_tier("user-1", SubscriptionTier.PRO)
