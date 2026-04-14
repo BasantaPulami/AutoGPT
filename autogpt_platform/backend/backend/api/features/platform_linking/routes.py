@@ -19,10 +19,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from autogpt_libs import auth
-from fastapi import APIRouter, Depends, HTTPException, Path, Security
+from fastapi import APIRouter, HTTPException, Path, Security
 from prisma.models import PlatformLink, PlatformLinkToken, PlatformUserLink
 
-from . import find_server_link, find_user_link
+from . import find_server_link, find_user_link, redact_id
 from .auth import check_bot_api_key, get_bot_api_key
 from .models import (
     ConfirmLinkResponse,
@@ -67,7 +67,7 @@ def _link_base_url() -> str:
 )
 async def create_link_token(
     request: CreateLinkTokenRequest,
-    x_bot_api_key: str | None = Depends(get_bot_api_key),
+    x_bot_api_key: str | None = Security(get_bot_api_key),
 ) -> LinkTokenResponse:
     """Bot creates a token to claim a server. First user to confirm becomes owner."""
     check_bot_api_key(x_bot_api_key)
@@ -132,7 +132,7 @@ async def create_link_token(
 )
 async def create_user_link_token(
     request: CreateUserLinkTokenRequest,
-    x_bot_api_key: str | None = Depends(get_bot_api_key),
+    x_bot_api_key: str | None = Security(get_bot_api_key),
 ) -> LinkTokenResponse:
     """Bot creates a token for an individual to link their DMs with the bot."""
     check_bot_api_key(x_bot_api_key)
@@ -176,7 +176,7 @@ async def create_user_link_token(
     logger.info(
         "Created USER link token for %s user %s (expires %s)",
         platform,
-        request.platform_user_id,
+        redact_id(request.platform_user_id),
         expires_at.isoformat(),
     )
 
@@ -194,7 +194,7 @@ async def create_user_link_token(
 )
 async def get_link_token_status(
     token: TokenPath,
-    x_bot_api_key: str | None = Depends(get_bot_api_key),
+    x_bot_api_key: str | None = Security(get_bot_api_key),
 ) -> LinkTokenStatusResponse:
     """Bot polls to check if the user has completed linking."""
     check_bot_api_key(x_bot_api_key)
@@ -258,7 +258,7 @@ async def get_link_token_info(token: TokenPath) -> LinkTokenInfoResponse:
 )
 async def resolve_platform_server(
     request: ResolveServerRequest,
-    x_bot_api_key: str | None = Depends(get_bot_api_key),
+    x_bot_api_key: str | None = Security(get_bot_api_key),
 ) -> ResolveResponse:
     """Called by the bot for every message in a server/group channel."""
     check_bot_api_key(x_bot_api_key)
@@ -274,7 +274,7 @@ async def resolve_platform_server(
 )
 async def resolve_platform_user(
     request: ResolveUserRequest,
-    x_bot_api_key: str | None = Depends(get_bot_api_key),
+    x_bot_api_key: str | None = Security(get_bot_api_key),
 ) -> ResolveResponse:
     """Called by the bot for every DM with an individual."""
     check_bot_api_key(x_bot_api_key)
@@ -335,7 +335,7 @@ async def confirm_link_token(
         link_token.platform,
         link_token.platformServerId,
         user_id[-8:],
-        link_token.platformUserId,
+        redact_id(link_token.platformUserId),
     )
 
     return ConfirmLinkResponse(
@@ -388,7 +388,7 @@ async def confirm_user_link_token(
     logger.info(
         "Linked %s user %s DMs to AutoGPT user ...%s",
         link_token.platform,
-        link_token.platformUserId,
+        redact_id(link_token.platformUserId),
         user_id[-8:],
     )
 
@@ -496,7 +496,7 @@ async def delete_user_link(
     logger.info(
         "Unlinked %s DMs for user %s from AutoGPT user ...%s",
         link.platform,
-        link.platformUserId,
+        redact_id(link.platformUserId),
         user_id[-8:],
     )
     return DeleteLinkResponse(success=True)

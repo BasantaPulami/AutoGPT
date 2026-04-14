@@ -19,7 +19,7 @@ import asyncio
 import logging
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException, Security
 from fastapi.responses import StreamingResponse
 
 from backend.copilot import stream_registry
@@ -32,7 +32,7 @@ from backend.copilot.model import (
 )
 from backend.copilot.response_model import StreamFinish
 
-from . import find_server_link, find_user_link
+from . import find_server_link, find_user_link, redact_id
 from .auth import check_bot_api_key, get_bot_api_key
 from .models import BotChatRequest, BotChatSessionResponse
 
@@ -75,7 +75,7 @@ async def _resolve_owner(request: BotChatRequest) -> str:
 )
 async def bot_create_session(
     request: BotChatRequest,
-    x_bot_api_key: str | None = Depends(get_bot_api_key),
+    x_bot_api_key: str | None = Security(get_bot_api_key),
 ) -> BotChatSessionResponse:
     """Create a new CoPilot session owned by the resolved AutoGPT account."""
     check_bot_api_key(x_bot_api_key)
@@ -87,7 +87,7 @@ async def bot_create_session(
         "Bot created session %s for %s user %s (server %s, owner ...%s)",
         session.session_id,
         request.platform.value,
-        request.platform_user_id,
+        redact_id(request.platform_user_id),
         request.platform_server_id or "DM",
         owner_user_id[-8:],
     )
@@ -101,7 +101,7 @@ async def bot_create_session(
 )
 async def bot_chat_stream(
     request: BotChatRequest,
-    x_bot_api_key: str | None = Depends(get_bot_api_key),
+    x_bot_api_key: str | None = Security(get_bot_api_key),
 ):
     """Send a message to CoPilot and stream the response as SSE."""
     check_bot_api_key(x_bot_api_key)
@@ -132,18 +132,10 @@ async def bot_chat_stream(
 
     subscribe_from_id = "0-0"
 
-    await enqueue_copilot_turn(
-        session_id=session_id,
-        user_id=owner_user_id,
-        message=request.message,
-        turn_id=turn_id,
-        is_user_message=True,
-    )
-
     logger.info(
         "Bot chat: %s user %s, server %s, session %s, turn %s (owner ...%s)",
         request.platform.value,
-        request.platform_user_id,
+        redact_id(request.platform_user_id),
         request.platform_server_id or "DM",
         session_id,
         turn_id,
@@ -163,6 +155,16 @@ async def bot_chat_stream(
                 yield StreamFinish().to_sse()
                 yield "data: [DONE]\n\n"
                 return
+
+            # Enqueue AFTER subscribing so the executor can't emit stream
+            # events that would arrive before we're listening.
+            await enqueue_copilot_turn(
+                session_id=session_id,
+                user_id=owner_user_id,
+                message=request.message,
+                turn_id=turn_id,
+                is_user_message=True,
+            )
 
             while True:
                 try:
@@ -195,6 +197,8 @@ async def bot_chat_stream(
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            # Disable proxy buffering (nginx) so SSE chunks flush immediately.
+            "X-Accel-Buffering": "no",
             "X-Session-Id": session_id,
         },
     )
