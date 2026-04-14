@@ -415,11 +415,17 @@ class AutoPilotBlock(Block):
             yield "session_id", sid
             yield "error", str(exc)
             if not _is_deliberate_block(exc):
+                effective_prompt = input_data.prompt
+                if input_data.system_context:
+                    effective_prompt = (
+                        f"[System Context: {input_data.system_context}]\n\n"
+                        f"{input_data.prompt}"
+                    )
                 try:
                     await _enqueue_for_recovery(
                         sid,
                         execution_context.user_id,
-                        input_data.prompt,
+                        effective_prompt,
                         input_data.dry_run or execution_context.dry_run,
                     )
                 except Exception:
@@ -592,11 +598,14 @@ async def _enqueue_for_recovery(
             enqueue_copilot_turn,
         )
 
-        await enqueue_copilot_turn(
-            session_id=session_id,
-            user_id=user_id,
-            message=message,
-            turn_id=str(uuid.uuid4()),
+        await asyncio.wait_for(
+            enqueue_copilot_turn(
+                session_id=session_id,
+                user_id=user_id,
+                message=message,
+                turn_id=str(uuid.uuid4()),
+            ),
+            timeout=10,
         )
         logger.info("AutoPilot session %s enqueued for recovery", session_id[:12])
     except Exception:

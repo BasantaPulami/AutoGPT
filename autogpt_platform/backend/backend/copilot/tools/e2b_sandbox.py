@@ -66,7 +66,7 @@ _SANDBOX_CREATE_MAX_RETRIES = 3
 # _SANDBOX_CREATE_TIMEOUT_SECONDS + inter-retry backoff ≈ 93 s → 120 s.
 _CREATION_LOCK_TTL = 120  # seconds
 
-_MAX_WAIT_ATTEMPTS = 20  # 20 × 0.5 s = 10 s max wait
+_MAX_WAIT_ATTEMPTS = 200  # 200 × 0.5 s = 100 s max wait (covers ~93 s retry window)
 
 # Timeout for E2B API calls (pause/kill) — short because these are control-plane
 # operations; if the sandbox is unreachable, fail fast and retry on the next turn.

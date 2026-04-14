@@ -384,3 +384,27 @@ class TestRecoveryEnqueue:
         mock_enqueue.assert_awaited_once()
         positional = mock_enqueue.call_args_list[0][0]
         assert positional[3] is True  # dry_run=True
+
+    @pytest.mark.asyncio
+    async def test_recovery_uses_effective_prompt_with_system_context(self, block):
+        """When system_context is set, _enqueue_for_recovery receives the
+        effective_prompt (system_context prepended) so the dedup check in
+        maybe_append_user_message passes on replay."""
+        block.execute_copilot = AsyncMock(side_effect=RuntimeError("e2b timeout"))
+        block.create_session = AsyncMock(return_value="sess-sys-ctx")
+
+        input_data = block.Input(
+            prompt="do work",
+            system_context="Be concise.",
+            max_recursion_depth=3,
+        )
+        ctx = _make_context()
+
+        with patch("backend.blocks.autopilot._enqueue_for_recovery") as mock_enqueue:
+            mock_enqueue.return_value = None
+            async for _ in block.run(input_data, execution_context=ctx):
+                pass
+
+        mock_enqueue.assert_awaited_once()
+        positional = mock_enqueue.call_args_list[0][0]
+        assert positional[2] == "[System Context: Be concise.]\n\ndo work"
