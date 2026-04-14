@@ -24,12 +24,7 @@ from fastapi.responses import StreamingResponse
 
 from backend.copilot import stream_registry
 from backend.copilot.executor.utils import enqueue_copilot_turn
-from backend.copilot.model import (
-    ChatMessage,
-    append_and_save_message,
-    create_chat_session,
-    get_chat_session,
-)
+from backend.copilot.model import create_chat_session, get_chat_session
 from backend.copilot.response_model import StreamError, StreamFinish
 
 from . import find_server_link, find_user_link
