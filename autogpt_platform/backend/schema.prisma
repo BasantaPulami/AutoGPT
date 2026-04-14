@@ -75,7 +75,6 @@ model User {
   PushSubscriptions     PushSubscription[]
   PendingHumanReviews   PendingHumanReview[]
   Workspace             UserWorkspace?
-
   PlatformCostLogs PlatformCostLog[]
 
   // OAuth Provider relations
@@ -157,6 +156,7 @@ model CoPilotUnderstanding {
 
   @@index([userId])
 }
+
 
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
@@ -795,6 +795,7 @@ enum CreditTransactionType {
   GRANT
   REFUND
   CARD_CHECK
+  SUBSCRIPTION
 }
 
 model CreditTransaction {
@@ -863,6 +864,8 @@ model PlatformCostLog {
 
   inputTokens  Int?
   outputTokens Int?
+  cacheReadTokens     Int? // Anthropic cache read tokens (billed at 10% of base)
+  cacheCreationTokens Int? // Anthropic cache write tokens (billed at 125% of base)
   dataSize     Int? // bytes
   duration     Float? // seconds
   model        String?
