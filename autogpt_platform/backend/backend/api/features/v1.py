@@ -59,6 +59,7 @@ from backend.data.credit import (
     get_subscription_price_id,
     get_user_credit_model,
     handle_subscription_payment_failure,
+    modify_stripe_subscription_for_tier,
     set_auto_top_up,
     set_subscription_tier,
     sync_subscription_from_stripe,
@@ -891,7 +892,31 @@ async def update_subscription_tier(
     if (user.subscription_tier or SubscriptionTier.FREE) == tier:
         return SubscriptionCheckoutResponse(url="")
 
-    # Paid upgrade → create Stripe Checkout Session.
+    # Paid→paid tier change: if the user already has a Stripe subscription,
+    # modify it in-place with proration instead of creating a new Checkout
+    # Session. This preserves remaining paid time and avoids double-charging.
+    # The customer.subscription.updated webhook fires and updates the DB tier.
+    current_tier = user.subscription_tier or SubscriptionTier.FREE
+    if current_tier in (SubscriptionTier.PRO, SubscriptionTier.BUSINESS):
+        try:
+            modified = await modify_stripe_subscription_for_tier(user_id, tier)
+            if modified:
+                return SubscriptionCheckoutResponse(url="")
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except stripe.StripeError as e:
+            logger.exception(
+                "Stripe error modifying subscription for user %s: %s", user_id, e
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Unable to update your subscription right now. "
+                    "Please try again or contact support."
+                ),
+            )
+
+    # Paid upgrade from FREE → create Stripe Checkout Session.
     if not request.success_url or not request.cancel_url:
         raise HTTPException(
             status_code=422,
