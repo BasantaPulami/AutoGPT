@@ -12190,11 +12190,11 @@
       "PendingMessageContext": {
         "properties": {
           "url": {
-            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "anyOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }],
             "title": "Url"
           },
           "content": {
-            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "anyOf": [{ "type": "string", "maxLength": 32000 }, { "type": "null" }],
             "title": "Content"
           }
         },
@@ -12802,7 +12802,7 @@
         "properties": {
           "message": {
             "type": "string",
-            "maxLength": 16000,
+            "maxLength": 32000,
             "minLength": 1,
             "title": "Message"
           },
