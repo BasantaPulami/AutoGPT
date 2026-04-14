@@ -301,7 +301,8 @@ class TestCreateLinkTokenEndpoint:
 
         assert result.token
         assert "guild_123" not in result.token  # token is random
-        assert result.link_url.endswith(result.token)
+        assert result.token in result.link_url
+        assert "?platform=DISCORD" in result.link_url
 
     @pytest.mark.asyncio
     @patch.dict("os.environ", {"PLATFORM_BOT_API_KEY": "testkey"}, clear=False)
