@@ -724,3 +724,155 @@ class TestValidateTranscript:
     def test_assistant_only_is_valid(self):
         content = _make_jsonl(ASST_ENTRY)
         assert validate_transcript(content) is True
+
+
+# ---------------------------------------------------------------------------
+# CLI native session file helpers
+# ---------------------------------------------------------------------------
+
+
+class TestCliSessionPath:
+    def test_encodes_slashes_to_dashes(self):
+        from .transcript import _cli_session_path, _projects_base
+
+        sdk_cwd = "/tmp/copilot-abc"
+        result = _cli_session_path(sdk_cwd, "12345678-1234-1234-1234-123456789abc")
+        base = _projects_base()
+        assert result.startswith(base)
+        # Encoded cwd replaces '/' with '-'
+        assert "-tmp-copilot-abc" in result
+        assert result.endswith(".jsonl")
+
+    def test_sanitizes_session_id(self):
+        from .transcript import _cli_session_path
+
+        result = _cli_session_path("/tmp/cwd", "../../etc/passwd")
+        # _sanitize_id strips non-hex/hyphen chars; path traversal impossible
+        assert ".." not in result
+        assert "passwd" not in result
+
+
+class TestUploadCliSession:
+    def test_skips_upload_when_path_outside_projects_base(self, tmp_path):
+        """Files outside the CLI projects base are rejected without upload."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        from .transcript import upload_cli_session
+
+        outside_path_obj = tmp_path / "outside.jsonl"
+        outside_path_obj.write_bytes(b'{"type":"assistant"}\n')
+
+        mock_storage = AsyncMock()
+
+        with (
+            patch(
+                "backend.copilot.transcript._projects_base",
+                return_value="/nonexistent/projects/base",
+            ),
+            patch(
+                "backend.copilot.transcript.get_workspace_storage",
+                new_callable=AsyncMock,
+                return_value=mock_storage,
+            ),
+        ):
+            asyncio.run(
+                upload_cli_session(
+                    user_id="user-1",
+                    session_id="12345678-0000-0000-0000-000000000000",
+                    sdk_cwd="/tmp/copilot-test",
+                )
+            )
+
+        # storage.store must NOT be called for paths outside the base
+        mock_storage.store.assert_not_called()
+
+    def test_skips_upload_when_file_not_found(self, tmp_path):
+        """Missing CLI session file logs debug and skips upload silently."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        from .transcript import upload_cli_session
+
+        mock_storage = AsyncMock()
+        projects_base = str(tmp_path)
+
+        with (
+            patch(
+                "backend.copilot.transcript._projects_base",
+                return_value=projects_base,
+            ),
+            patch(
+                "backend.copilot.transcript.get_workspace_storage",
+                new_callable=AsyncMock,
+                return_value=mock_storage,
+            ),
+        ):
+            # session file doesn't exist — should not raise
+            asyncio.run(
+                upload_cli_session(
+                    user_id="user-1",
+                    session_id="12345678-0000-0000-0000-000000000000",
+                    sdk_cwd=str(tmp_path),
+                )
+            )
+
+        mock_storage.store.assert_not_called()
+
+
+class TestRestoreCliSession:
+    def test_returns_false_when_file_not_found_in_storage(self):
+        """Returns False (graceful degradation) when the session is missing."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        from .transcript import restore_cli_session
+
+        mock_storage = AsyncMock()
+        mock_storage.retrieve.side_effect = FileNotFoundError("not found")
+
+        with patch(
+            "backend.copilot.transcript.get_workspace_storage",
+            new_callable=AsyncMock,
+            return_value=mock_storage,
+        ):
+            result = asyncio.run(
+                restore_cli_session(
+                    user_id="user-1",
+                    session_id="12345678-0000-0000-0000-000000000000",
+                    sdk_cwd="/tmp/copilot-test",
+                )
+            )
+
+        assert result is False
+
+    def test_returns_false_when_restore_path_outside_projects_base(self, tmp_path):
+        """Path traversal guard: rejects restoration outside the projects base."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        from .transcript import restore_cli_session
+
+        mock_storage = AsyncMock()
+        mock_storage.retrieve.return_value = b'{"type":"assistant"}\n'
+
+        with (
+            patch(
+                "backend.copilot.transcript.get_workspace_storage",
+                new_callable=AsyncMock,
+                return_value=mock_storage,
+            ),
+            patch(
+                "backend.copilot.transcript._projects_base",
+                return_value="/nonexistent/projects/base",
+            ),
+        ):
+            result = asyncio.run(
+                restore_cli_session(
+                    user_id="user-1",
+                    session_id="12345678-0000-0000-0000-000000000000",
+                    sdk_cwd="/tmp/copilot-test",
+                )
+            )
+
+        assert result is False

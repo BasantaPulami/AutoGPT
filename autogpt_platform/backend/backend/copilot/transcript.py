@@ -708,7 +708,7 @@ async def upload_cli_session(
         logger.warning(
             "%s CLI session file outside projects base, skipping upload: %s",
             log_prefix,
-            session_file,
+            real_path,
         )
         return
 
@@ -753,13 +753,9 @@ async def restore_cli_session(
     or upload failed), in which case the caller should not set --resume.
     """
     storage = await get_workspace_storage()
-    wid, fid, fname = _cli_session_storage_path_parts(user_id, session_id)
-
-    if isinstance(storage, GCSWorkspaceStorage):
-        blob = f"workspaces/{wid}/{fid}/{fname}"
-        path = f"gcs://{storage.bucket_name}/{blob}"
-    else:
-        path = f"local://{wid}/{fid}/{fname}"
+    path = _build_path_from_parts(
+        _cli_session_storage_path_parts(user_id, session_id), storage
+    )
 
     try:
         content = await storage.retrieve(path)

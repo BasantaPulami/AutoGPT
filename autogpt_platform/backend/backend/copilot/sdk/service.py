@@ -2995,6 +2995,13 @@ async def stream_chat_completion_sdk(
         # The CLI writes its native session JSONL after each turn completes.
         # Uploading it here enables --resume on any pod (no pod affinity needed).
         # Runs after upload_transcript so both are available for the next turn.
+        # asyncio.shield: same pattern as upload_transcript above — if the
+        # outer finally-block coroutine is cancelled while awaiting shield,
+        # the CancelledError propagates (BaseException, not caught by
+        # `except Exception`) letting the caller handle cancellation, while
+        # the shielded inner coroutine continues running to completion so the
+        # upload is not lost.  This is intentional and matches the pattern
+        # used for upload_transcript immediately above.
         if (
             config.claude_agent_use_resume
             and user_id

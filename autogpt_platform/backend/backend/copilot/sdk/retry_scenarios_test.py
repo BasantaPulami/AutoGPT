@@ -813,8 +813,12 @@ class TestRetryStateReset:
 
     def test_cli_session_restore_failure_skips_resume(self):
         """When restore_cli_session returns False, --resume is not used.
-        The transcript builder is still populated for future upload_transcript."""
-        # Simulate the logic from the primary resume path in service.py.
+        The transcript builder is still populated for future upload_transcript.
+
+        This covers the guard on the cli_restored branch in service.py.
+        For a full integration test exercising the actual service code path,
+        see TestStreamChatCompletionRetryIntegration.test_resume_skipped_when_cli_session_missing.
+        """
         use_resume = False
         resume_file = None
         cli_restored = False  # restore_cli_session returned False
@@ -823,7 +827,6 @@ class TestRetryStateReset:
             use_resume = True
             resume_file = "sess-uuid"
 
-        # resume is not activated; builder state may still be loaded
         assert use_resume is False
         assert resume_file is None
 
@@ -999,7 +1002,10 @@ def _make_sdk_patches(
                 return_value=MagicMock(content=original_transcript, message_count=2),
             ),
         ),
-        (f"{_SVC}.restore_cli_session", dict(new_callable=AsyncMock, return_value=True)),
+        (
+            f"{_SVC}.restore_cli_session",
+            dict(new_callable=AsyncMock, return_value=True),
+        ),
         (f"{_SVC}.upload_cli_session", dict(new_callable=AsyncMock)),
         (f"{_SVC}.validate_transcript", dict(return_value=True)),
         (
@@ -1877,4 +1883,66 @@ class TestStreamChatCompletionRetryIntegration:
             or "interrupted" in (e.message or "").lower()
             for e in status_events
         ), f"Expected 'retrying' or 'interrupted' in StreamStatus, got: {[e.message for e in status_events]}"
+        assert any(isinstance(e, StreamStart) for e in events)
+
+    @pytest.mark.asyncio
+    async def test_resume_skipped_when_cli_session_missing(self):
+        """When restore_cli_session returns False, --resume is NOT passed to ClaudeSDKClient.
+
+        Exercises the actual service code path so any change to the cli_restored
+        branch in service.py will be caught immediately by this test.
+        """
+        import contextlib
+
+        from backend.copilot.response_model import StreamStart
+        from backend.copilot.sdk.service import stream_chat_completion_sdk
+
+        session = self._make_session()
+        result_msg = self._make_result_message()
+        original_transcript = _build_transcript(
+            [("user", "prior question"), ("assistant", "prior answer")]
+        )
+        captured_options: dict = {}
+
+        def _client_factory(**kwargs):
+            captured_options.update(kwargs)
+            return self._make_client_mock(result_message=result_msg)
+
+        patches = _make_sdk_patches(
+            session,
+            original_transcript=original_transcript,
+            compacted_transcript=None,
+            client_side_effect=_client_factory,
+        )
+        # Override restore_cli_session to return False (CLI native session unavailable)
+        patches = [
+            (
+                (
+                    f"{_SVC}.restore_cli_session",
+                    dict(new_callable=AsyncMock, return_value=False),
+                )
+                if p[0] == f"{_SVC}.restore_cli_session"
+                else p
+            )
+            for p in patches
+        ]
+
+        events = []
+        with contextlib.ExitStack() as stack:
+            for target, kwargs in patches:
+                stack.enter_context(patch(target, **kwargs))
+            async for event in stream_chat_completion_sdk(
+                session_id="test-session-id",
+                message="hello",
+                is_user_message=True,
+                user_id="test-user",
+                session=session,
+            ):
+                events.append(event)
+
+        # --resume must NOT be passed when CLI native session was not restored
+        assert "resume" not in captured_options, (
+            f"--resume was set even though restore_cli_session returned False: "
+            f"{captured_options}"
+        )
         assert any(isinstance(e, StreamStart) for e in events)

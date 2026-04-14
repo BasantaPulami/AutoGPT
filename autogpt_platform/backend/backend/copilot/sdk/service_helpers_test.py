@@ -185,7 +185,7 @@ class TestReduceContext:
         assert ctx.transcript_lost is True
 
     @pytest.mark.asyncio
-    async def test_compaction_same_size_drops(self) -> None:
+    async def test_compaction_invalid_transcript_drops(self) -> None:
         # When validate_transcript returns False for compacted content, drop transcript.
         transcript = _build_transcript([("user", "hi"), ("assistant", "hello")])
         compacted = _build_transcript([("user", "hi"), ("assistant", "[summary]")])
