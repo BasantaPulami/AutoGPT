@@ -71,7 +71,7 @@ export function Button(props: ButtonProps) {
 
     const linkButton = (
       <button
-        className={cn(
+        className={applyUnmask(
           extendedButtonVariants({ variant: "link", className }),
           loading && "pointer-events-none opacity-60",
           isDisabled && "pointer-events-none opacity-50",
