@@ -2,7 +2,7 @@
 
 import { ensureSupabaseClient } from "@/lib/supabase/hooks/helpers";
 import { useSupabase } from "@/lib/supabase/hooks/useSupabase";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchVapidPublicKey, sendSubscriptionToServer } from "./api";
 import {
   isPushSupported,
@@ -23,6 +23,7 @@ import type { PushSWMessage } from "./types";
 export function usePushNotifications() {
   const { user } = useSupabase();
   const registeredRef = useRef(false);
+  const [renewCount, setRenewCount] = useState(0);
 
   useEffect(() => {
     if (!user || registeredRef.current) return;
@@ -63,7 +64,7 @@ export function usePushNotifications() {
     setup().catch((error) =>
       console.error("Push notification setup failed:", error),
     );
-  }, [user]);
+  }, [user, renewCount]);
 
   // Listen for subscription change events from the service worker
   useEffect(() => {
@@ -73,6 +74,7 @@ export function usePushNotifications() {
     function handleMessage(event: MessageEvent<PushSWMessage>) {
       if (event.data?.type === "PUSH_SUBSCRIPTION_CHANGED") {
         registeredRef.current = false;
+        setRenewCount((c) => c + 1);
       }
     }
 
