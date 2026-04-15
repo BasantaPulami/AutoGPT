@@ -1,6 +1,7 @@
 """Tests for disconnect_all_listeners in stream_registry."""
 
 import asyncio
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -88,3 +89,22 @@ async def test_disconnect_all_listeners_skips_already_done_tasks():
 async def test_disconnect_all_listeners_empty_registry():
     cancelled = await stream_registry.disconnect_all_listeners("sess-1")
     assert cancelled == 0
+
+
+@pytest.mark.asyncio
+async def test_disconnect_all_listeners_timeout_not_counted():
+    """Tasks that don't respond to cancellation (timeout) are not counted."""
+    task = asyncio.create_task(_sleep_forever())
+    stream_registry._listener_sessions[1] = ("sess-1", task)
+
+    with patch.object(
+        asyncio, "wait_for", new=AsyncMock(side_effect=asyncio.TimeoutError)
+    ):
+        cancelled = await stream_registry.disconnect_all_listeners("sess-1")
+
+    assert cancelled == 0
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass

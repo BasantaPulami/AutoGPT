@@ -1186,11 +1186,12 @@ async def disconnect_all_listeners(session_id: str) -> int:
     for _qid, task in to_cancel:
         try:
             await asyncio.wait_for(task, timeout=5.0)
-        except (asyncio.CancelledError, asyncio.TimeoutError):
+        except asyncio.CancelledError:
+            cancelled += 1
+        except asyncio.TimeoutError:
             pass
         except Exception as e:
             logger.error(f"Error cancelling listener for session {session_id}: {e}")
-        cancelled += 1
 
     if cancelled:
         logger.info(f"Disconnected {cancelled} listener(s) for session {session_id}")
