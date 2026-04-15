@@ -74,6 +74,15 @@ class FindBlockTool(BaseTool):
                     "description": "Include full input/output schemas (for agent JSON generation).",
                     "default": False,
                 },
+                "for_agent_generation": {
+                    "type": "boolean",
+                    "description": (
+                        "Set to true when searching for blocks to use inside an agent graph "
+                        "(e.g. AgentInputBlock, AgentOutputBlock, OrchestratorBlock). "
+                        "Bypasses the CoPilot-only filter so graph-only blocks are visible."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["query"],
         }
@@ -88,6 +97,7 @@ class FindBlockTool(BaseTool):
         session: ChatSession,
         query: str = "",
         include_schemas: bool = False,
+        for_agent_generation: bool = False,
         **kwargs,
     ) -> ToolResponseBase:
         """Search for blocks matching the query.
@@ -97,6 +107,8 @@ class FindBlockTool(BaseTool):
             session: Chat session
             query: Search query
             include_schemas: Whether to include block schemas in results
+            for_agent_generation: When True, bypasses the CoPilot exclusion filter
+                so graph-only blocks (INPUT, OUTPUT, ORCHESTRATOR, etc.) are visible.
 
         Returns:
             BlockListResponse: List of matching blocks
@@ -123,10 +135,11 @@ class FindBlockTool(BaseTool):
                             suggestions=["Search for an alternative block by name"],
                             session_id=session_id,
                         )
-                    if (
+                    is_excluded = (
                         block.block_type in COPILOT_EXCLUDED_BLOCK_TYPES
                         or block.id in COPILOT_EXCLUDED_BLOCK_IDS
-                    ):
+                    )
+                    if is_excluded and not for_agent_generation:
                         if block.block_type == BlockType.MCP_TOOL:
                             return NoResultsResponse(
                                 message=(
@@ -221,8 +234,9 @@ class FindBlockTool(BaseTool):
                 if not block or block.disabled:
                     continue
 
-                # Skip blocks excluded from CoPilot (graph-only blocks)
-                if (
+                # Skip blocks excluded from CoPilot (graph-only blocks),
+                # unless the caller is building an agent graph.
+                if not for_agent_generation and (
                     block.block_type in COPILOT_EXCLUDED_BLOCK_TYPES
                     or block.id in COPILOT_EXCLUDED_BLOCK_IDS
                 ):
