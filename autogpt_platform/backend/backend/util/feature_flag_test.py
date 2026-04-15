@@ -5,7 +5,6 @@ from ldclient import LDClient
 from backend.util.feature_flag import (
     Flag,
     _env_flag_override,
-    env_flag_string_override,
     feature_flag,
     is_feature_enabled,
     mock_flag_variation,
@@ -169,45 +168,3 @@ class TestEnvFlagOverride:
     def test_case_insensitive_value(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("FORCE_FLAG_CHAT", "TRUE")
         assert _env_flag_override(Flag.CHAT) is True
-
-
-class TestEnvFlagOverrideString:
-    def test_returns_model_string(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("FORCE_FLAG_COPILOT_MODEL", "anthropic/claude-opus-4-6")
-        assert (
-            env_flag_string_override(Flag.COPILOT_MODEL) == "anthropic/claude-opus-4-6"
-        )
-
-    def test_next_public_prefix_accepted(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv(
-            "NEXT_PUBLIC_FORCE_FLAG_COPILOT_MODEL", "anthropic/claude-opus-4-6"
-        )
-        assert (
-            env_flag_string_override(Flag.COPILOT_MODEL) == "anthropic/claude-opus-4-6"
-        )
-
-    def test_unset_returns_none(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.delenv("FORCE_FLAG_COPILOT_MODEL", raising=False)
-        monkeypatch.delenv("NEXT_PUBLIC_FORCE_FLAG_COPILOT_MODEL", raising=False)
-        assert env_flag_string_override(Flag.COPILOT_MODEL) is None
-
-    def test_blank_value_returns_none(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("FORCE_FLAG_COPILOT_MODEL", "   ")
-        assert env_flag_string_override(Flag.COPILOT_MODEL) is None
-
-    def test_force_flag_takes_precedence_over_next_public(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
-        monkeypatch.setenv("FORCE_FLAG_COPILOT_MODEL", "anthropic/claude-opus-4-6")
-        monkeypatch.setenv(
-            "NEXT_PUBLIC_FORCE_FLAG_COPILOT_MODEL", "anthropic/claude-sonnet-4-6"
-        )
-        assert (
-            env_flag_string_override(Flag.COPILOT_MODEL) == "anthropic/claude-opus-4-6"
-        )
-
-    def test_whitespace_is_stripped(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("FORCE_FLAG_COPILOT_MODEL", "  anthropic/claude-opus-4-6  ")
-        assert (
-            env_flag_string_override(Flag.COPILOT_MODEL) == "anthropic/claude-opus-4-6"
-        )

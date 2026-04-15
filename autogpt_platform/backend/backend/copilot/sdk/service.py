@@ -54,11 +54,6 @@ from backend.copilot.transcript_builder import TranscriptBuilder
 from backend.data.redis_client import get_redis_async
 from backend.executor.cluster_lock import AsyncClusterLock
 from backend.util.exceptions import NotFoundError
-from backend.util.feature_flag import (
-    Flag,
-    env_flag_string_override,
-    get_feature_flag_value,
-)
 from backend.util.settings import Settings
 
 from ..config import ChatConfig, CopilotLlmModel, CopilotMode
@@ -684,57 +679,21 @@ def _resolve_fallback_model() -> str | None:
     return _normalize_model_name(raw)
 
 
-async def _resolve_user_model_override(user_id: str) -> str | None:
-    """Resolve a per-user model override from LaunchDarkly or env vars.
-
-    Checks ``Flag.COPILOT_MODEL`` via LaunchDarkly for the given user.
-    Returns the normalized model string (e.g. ``"claude-opus-4-6"``) when
-    an override is configured, or ``None`` to fall through to the global
-    ``config.model`` / ``sdk_model`` default.
-
-    Local dev: set ``FORCE_FLAG_COPILOT_MODEL=anthropic/claude-opus-4-6``
-    (or with ``NEXT_PUBLIC_FORCE_FLAG_`` prefix) to test without LD.
-    """
-    # Env override takes precedence — avoids an LD round-trip in local dev.
-    env_override = env_flag_string_override(Flag.COPILOT_MODEL)
-    if env_override:
-        return _normalize_model_name(env_override)
-
-    raw = await get_feature_flag_value(Flag.COPILOT_MODEL.value, user_id, default=None)
-    if not raw or not isinstance(raw, str):
-        return None
-    return _normalize_model_name(raw)
-
-
 async def _resolve_model_and_multiplier(
     model: "CopilotLlmModel | None",
-    user_id: str | None,
     session_id: str,
 ) -> tuple[str | None, float]:
     """Resolve the SDK model string and rate-limit cost multiplier for a turn.
 
     Priority (highest first):
     1. Explicit per-request ``model`` tier from the frontend toggle.
-    2. Per-user LaunchDarkly model override (``Flag.COPILOT_MODEL``).
-    3. Global config default (``_resolve_sdk_model()``).
+    2. Global config default (``_resolve_sdk_model()``).
 
     Returns a ``(sdk_model, cost_multiplier)`` pair.
     ``sdk_model`` is ``None`` when the Claude Code subscription default applies.
     ``cost_multiplier`` is 5.0 for Opus, 1.0 otherwise.
     """
     sdk_model = _resolve_sdk_model()
-
-    if user_id:
-        user_model_override = await _resolve_user_model_override(user_id)
-        if user_model_override:
-            logger.info(
-                "[SDK] [%s] Per-user model override for user %s: %s (was: %s)",
-                session_id[:12] if session_id else "?",
-                user_id[:8],
-                user_model_override,
-                sdk_model or "subscription-default",
-            )
-            sdk_model = user_model_override
 
     if model == "advanced":
         sdk_model = _normalize_model_name("anthropic/claude-opus-4-6")
@@ -2581,9 +2540,9 @@ async def stream_chat_completion_sdk(
 
         mcp_server = create_copilot_mcp_server(use_e2b=use_e2b)
 
-        # Resolve model and cost multiplier (LD per-user → request tier → config).
+        # Resolve model and cost multiplier (request tier → config default).
         sdk_model, model_cost_multiplier = await _resolve_model_and_multiplier(
-            model, user_id, session_id
+            model, session_id
         )
 
         # Track SDK-internal compaction (PreCompact hook → start, next msg → end)
