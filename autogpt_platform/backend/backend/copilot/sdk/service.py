@@ -14,7 +14,7 @@ import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, NotRequired, cast
 
 if TYPE_CHECKING:
     from backend.copilot.permissions import CopilotPermissions
@@ -117,6 +117,17 @@ from .tool_adapter import (
 
 logger = logging.getLogger(__name__)
 config = ChatConfig()
+
+
+class _SystemPromptPreset(SystemPromptPreset, total=False):
+    """Extends :class:`SystemPromptPreset` with ``exclude_dynamic_sections``.
+
+    The field was added to the upstream TypedDict in claude-agent-sdk 0.1.59.
+    Until the package is pinned to that version we declare it locally so Pyright
+    accepts the kwarg without a ``# type: ignore`` comment.
+    """
+
+    exclude_dynamic_sections: NotRequired[bool]
 
 
 # On context-size errors the SDK query is retried with progressively
@@ -817,7 +828,7 @@ def _build_system_prompt_value(
     """
     if cross_user_cache:
         logger.debug("Using SystemPromptPreset for cross-user prompt cache")
-        return SystemPromptPreset(
+        return _SystemPromptPreset(
             type="preset",
             preset="claude_code",
             append=system_prompt,
