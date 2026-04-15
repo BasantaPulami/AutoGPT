@@ -141,7 +141,7 @@ describe("ChatMessagesContainer", () => {
   it("renders bottom sentinel when forwardPaginated is true (forward pagination)", () => {
     render(<ChatMessagesContainer {...BASE_PROPS} forwardPaginated={true} />);
     expect(
-      screen.getByRole("button", { name: /load older messages/i }),
+      screen.getByRole("button", { name: /load newer messages/i }),
     ).toBeDefined();
   });
 
