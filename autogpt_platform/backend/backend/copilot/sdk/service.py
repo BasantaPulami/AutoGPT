@@ -927,7 +927,7 @@ def _read_cli_session_from_disk(
             "%s Failed to read CLI session file %s: %s",
             log_prefix,
             os.path.basename(session_file),
-            e,
+            e.strerror or str(e),
         )
         return None
 
