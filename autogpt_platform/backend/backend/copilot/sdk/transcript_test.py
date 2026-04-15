@@ -297,8 +297,8 @@ class TestStripProgressEntries:
 
 class TestDeleteTranscript:
     @pytest.mark.asyncio
-    async def test_deletes_both_jsonl_and_meta(self):
-        """delete_transcript removes both the .jsonl and .meta.json files."""
+    async def test_deletes_cli_session_and_meta(self):
+        """delete_transcript removes the CLI session .jsonl and .meta.json."""
         mock_storage = AsyncMock()
         mock_storage.delete = AsyncMock()
 
@@ -309,7 +309,7 @@ class TestDeleteTranscript:
         ):
             await delete_transcript("user-123", "session-456")
 
-        assert mock_storage.delete.call_count == 3
+        assert mock_storage.delete.call_count == 2
         paths = [call.args[0] for call in mock_storage.delete.call_args_list]
         assert any(p.endswith(".jsonl") for p in paths)
         assert any(p.endswith(".meta.json") for p in paths)
@@ -319,7 +319,7 @@ class TestDeleteTranscript:
         """If .jsonl delete fails, .meta.json delete is still attempted."""
         mock_storage = AsyncMock()
         mock_storage.delete = AsyncMock(
-            side_effect=[Exception("jsonl delete failed"), None, None]
+            side_effect=[Exception("jsonl delete failed"), None]
         )
 
         with patch(
@@ -330,14 +330,14 @@ class TestDeleteTranscript:
             # Should not raise
             await delete_transcript("user-123", "session-456")
 
-        assert mock_storage.delete.call_count == 3
+        assert mock_storage.delete.call_count == 2
 
     @pytest.mark.asyncio
     async def test_handles_meta_delete_failure(self):
         """If .meta.json delete fails, no exception propagates."""
         mock_storage = AsyncMock()
         mock_storage.delete = AsyncMock(
-            side_effect=[None, Exception("meta delete failed"), None]
+            side_effect=[None, Exception("meta delete failed")]
         )
 
         with patch(
@@ -1015,7 +1015,7 @@ class TestCleanupStaleProjectDirs:
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
         monkeypatch.setattr(
-            "backend.copilot.transcript._projects_base",
+            "backend.copilot.transcript.projects_base",
             lambda: str(projects_dir),
         )
 
@@ -1044,7 +1044,7 @@ class TestCleanupStaleProjectDirs:
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
         monkeypatch.setattr(
-            "backend.copilot.transcript._projects_base",
+            "backend.copilot.transcript.projects_base",
             lambda: str(projects_dir),
         )
 
@@ -1070,7 +1070,7 @@ class TestCleanupStaleProjectDirs:
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
         monkeypatch.setattr(
-            "backend.copilot.transcript._projects_base",
+            "backend.copilot.transcript.projects_base",
             lambda: str(projects_dir),
         )
 
@@ -1096,7 +1096,7 @@ class TestCleanupStaleProjectDirs:
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
         monkeypatch.setattr(
-            "backend.copilot.transcript._projects_base",
+            "backend.copilot.transcript.projects_base",
             lambda: str(projects_dir),
         )
 
@@ -1118,7 +1118,7 @@ class TestCleanupStaleProjectDirs:
 
         nonexistent = str(tmp_path / "does-not-exist" / "projects")
         monkeypatch.setattr(
-            "backend.copilot.transcript._projects_base",
+            "backend.copilot.transcript.projects_base",
             lambda: nonexistent,
         )
 
@@ -1137,7 +1137,7 @@ class TestCleanupStaleProjectDirs:
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
         monkeypatch.setattr(
-            "backend.copilot.transcript._projects_base",
+            "backend.copilot.transcript.projects_base",
             lambda: str(projects_dir),
         )
 
@@ -1165,7 +1165,7 @@ class TestCleanupStaleProjectDirs:
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
         monkeypatch.setattr(
-            "backend.copilot.transcript._projects_base",
+            "backend.copilot.transcript.projects_base",
             lambda: str(projects_dir),
         )
 
@@ -1189,7 +1189,7 @@ class TestCleanupStaleProjectDirs:
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
         monkeypatch.setattr(
-            "backend.copilot.transcript._projects_base",
+            "backend.copilot.transcript.projects_base",
             lambda: str(projects_dir),
         )
 

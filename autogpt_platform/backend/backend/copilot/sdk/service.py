@@ -16,6 +16,7 @@ import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, NotRequired, cast
 
 if TYPE_CHECKING:
@@ -92,8 +93,11 @@ from ..tools.sandbox import WORKSPACE_PREFIX, make_session_path
 from ..tracking import track_user_message
 from ..transcript import (
     _run_compression,
+    CliSessionRestore,
     cleanup_stale_project_dirs,
+    cli_session_path,
     compact_transcript,
+    projects_base,
     read_compacted_entries,
     restore_cli_session,
     strip_for_upload,
@@ -846,6 +850,120 @@ def _make_sdk_cwd(session_id: str) -> str:
     if not cwd.startswith(_SDK_CWD_PREFIX):
         raise ValueError(f"SDK cwd escaped prefix: {cwd}")
     return cwd
+
+
+def _write_cli_session_to_disk(
+    content: bytes,
+    sdk_cwd: str,
+    session_id: str,
+    log_prefix: str,
+) -> bool:
+    """Write downloaded CLI session bytes to disk so the CLI can --resume.
+
+    Returns True on success, False if the path is invalid or the write fails.
+    Path-traversal guard: rejects paths outside the CLI projects base.
+    """
+    session_file = cli_session_path(sdk_cwd, session_id)
+    real_path = os.path.realpath(session_file)
+    _pbase = projects_base()
+    if not real_path.startswith(_pbase + os.sep):
+        logger.warning(
+            "%s CLI session restore path outside projects base: %s",
+            log_prefix,
+            os.path.basename(session_file),
+        )
+        return False
+    try:
+        os.makedirs(os.path.dirname(real_path), exist_ok=True)
+        Path(real_path).write_bytes(content)
+        logger.info(
+            "%s Wrote CLI session to disk (%dB) for --resume",
+            log_prefix,
+            len(content),
+        )
+        return True
+    except OSError as e:
+        logger.warning("%s Failed to write CLI session file: %s", log_prefix, e)
+        return False
+
+
+def _read_cli_session_from_disk(
+    sdk_cwd: str,
+    session_id: str,
+    log_prefix: str,
+) -> bytes | None:
+    """Read the CLI session JSONL file from disk after the SDK turn.
+
+    Returns the file bytes, or None if the file is missing, outside the
+    projects base, or unreadable.
+    Path-traversal guard: rejects paths outside the CLI projects base.
+    """
+    session_file = cli_session_path(sdk_cwd, session_id)
+    real_path = os.path.realpath(session_file)
+    _pbase = projects_base()
+    if not real_path.startswith(_pbase + os.sep):
+        logger.warning(
+            "%s CLI session file outside projects base, skipping upload: %s",
+            log_prefix,
+            os.path.basename(real_path),
+        )
+        return None
+    try:
+        return Path(real_path).read_bytes()
+    except FileNotFoundError:
+        logger.debug(
+            "%s CLI session file not found, skipping upload: %s",
+            log_prefix,
+            session_file,
+        )
+        return None
+    except OSError as e:
+        logger.warning("%s Failed to read CLI session file: %s", log_prefix, e)
+        return None
+
+
+def _process_cli_restore(
+    cli_restore: CliSessionRestore,
+    sdk_cwd: str,
+    session_id: str,
+    log_prefix: str,
+) -> tuple[str, bool]:
+    """Validate and write a restored CLI session to disk.
+
+    Decodes bytes → UTF-8, strips progress entries and stale thinking blocks,
+    validates the result, then writes the stripped content to disk so the CLI
+    can ``--resume`` from it.
+
+    Returns ``(stripped_content, success)`` where ``success=False`` means the
+    content was invalid or the disk write failed (caller should skip --resume).
+    """
+    try:
+        raw_str = cli_restore.content.decode("utf-8")
+    except UnicodeDecodeError:
+        logger.warning("%s CLI session content is not valid UTF-8, skipping", log_prefix)
+        return "", False
+
+    stripped = strip_for_upload(raw_str)
+    is_valid = validate_transcript(stripped)
+    logger.info(
+        "%s Restored CLI session: %dB raw, %d lines stripped, msg_count=%d, valid=%s",
+        log_prefix,
+        len(cli_restore.content),
+        len(stripped.strip().split("\n")) if stripped.strip() else 0,
+        cli_restore.message_count,
+        is_valid,
+    )
+    if not is_valid:
+        logger.warning(
+            "%s CLI session content invalid after strip — running without --resume",
+            log_prefix,
+        )
+        return "", False
+
+    if not _write_cli_session_to_disk(cli_restore.content, sdk_cwd, session_id, log_prefix):
+        return "", False
+
+    return stripped, True
 
 
 async def _cleanup_sdk_tool_results(cwd: str) -> None:
@@ -2459,7 +2577,7 @@ async def stream_chat_completion_sdk(
         if config.claude_agent_use_resume and user_id and len(session.messages) > 1:
             try:
                 cli_restore = await restore_cli_session(
-                    user_id, session_id, sdk_cwd, log_prefix=log_prefix
+                    user_id, session_id, log_prefix=log_prefix
                 )
             except Exception as restore_err:
                 logger.warning(
@@ -2469,40 +2587,45 @@ async def stream_chat_completion_sdk(
                 )
                 cli_restore = None
 
-            raw_str = ""
-            if cli_restore is not None:
-                try:
-                    raw_str = cli_restore.content.decode("utf-8")
-                except UnicodeDecodeError:
-                    logger.warning(
-                        "%s CLI session content is not valid UTF-8, skipping",
-                        log_prefix,
-                    )
+            # Validate, strip, and write to disk — delegate to helper to reduce
+            # function complexity.  Writing an invalid/corrupt file to disk then
+            # falling back to "no --resume" would cause the CLI to fail with
+            # "Session ID already in use" because the file exists at the expected
+            # session path, so we validate BEFORE any disk write.
+            stripped = ""
+            if cli_restore is not None and sdk_cwd:
+                stripped, ok = _process_cli_restore(
+                    cli_restore, sdk_cwd, session_id, log_prefix
+                )
+                if not ok:
+                    transcript_covers_prefix = False
                     cli_restore = None
 
+            if cli_restore is None and sdk_cwd:
+                # Validation failed or GCS returned no session.  Delete any
+                # existing local session file so the CLI doesn't reject the
+                # session_id with "Session ID already in use".  T1 may have
+                # left a valid file at this path; we clear it so the fallback
+                # path (session_id= without --resume) can create a new session.
+                _stale_path = os.path.realpath(cli_session_path(sdk_cwd, session_id))
+                if Path(_stale_path).exists() and _stale_path.startswith(
+                    projects_base() + os.sep
+                ):
+                    try:
+                        Path(_stale_path).unlink()
+                        logger.debug(
+                            "%s Removed stale local CLI session file for clean fallback",
+                            log_prefix,
+                        )
+                    except OSError:
+                        pass
+
             if cli_restore is not None:
-                stripped = strip_for_upload(raw_str)
-                is_valid = validate_transcript(stripped)
-                logger.info(
-                    "%s Restored CLI session: %dB raw, %d lines stripped, msg_count=%d, valid=%s",
-                    log_prefix,
-                    len(cli_restore.content),
-                    len(stripped.strip().split("\n")) if stripped.strip() else 0,
-                    cli_restore.message_count,
-                    is_valid,
-                )
-                if is_valid:
-                    transcript_content = stripped
-                    transcript_builder.load_previous(stripped, log_prefix=log_prefix)
-                    use_resume = True
-                    resume_file = session_id
-                    transcript_msg_count = cli_restore.message_count
-                else:
-                    logger.warning(
-                        "%s CLI session content invalid after strip — running without --resume",
-                        log_prefix,
-                    )
-                    transcript_covers_prefix = False
+                transcript_content = stripped
+                transcript_builder.load_previous(stripped, log_prefix=log_prefix)
+                use_resume = True
+                resume_file = session_id
+                transcript_msg_count = cli_restore.message_count
             else:
                 # No CLI session in GCS — reconstruct from DB messages as last-resort fallback.
                 prior = session.messages[:-1]
@@ -3374,15 +3497,21 @@ async def stream_chat_completion_sdk(
                 skip_transcript_upload,
             )
             try:
-                await asyncio.shield(
-                    upload_cli_session(
-                        user_id=user_id,
-                        session_id=session_id,
-                        sdk_cwd=sdk_cwd,
-                        message_count=len(session.messages),
-                        log_prefix=log_prefix,
-                    )
+                # Read the CLI's native session file from disk (written by the CLI
+                # after the turn), then upload the bytes to GCS.
+                _cli_content = _read_cli_session_from_disk(
+                    sdk_cwd, session_id, log_prefix
                 )
+                if _cli_content:
+                    await asyncio.shield(
+                        upload_cli_session(
+                            user_id=user_id,
+                            session_id=session_id,
+                            content=_cli_content,
+                            message_count=len(session.messages),
+                            log_prefix=log_prefix,
+                        )
+                    )
             except Exception as cli_upload_err:
                 logger.warning(
                     "%s CLI session upload failed in finally: %s",

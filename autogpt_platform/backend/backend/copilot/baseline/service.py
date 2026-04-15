@@ -66,9 +66,10 @@ from backend.copilot.tracking import track_user_message
 from backend.copilot.transcript import (
     STOP_REASON_END_TURN,
     STOP_REASON_TOOL_USE,
-    TranscriptDownload,
-    download_transcript,
-    upload_transcript,
+    CliSessionRestore,
+    restore_cli_session,
+    strip_for_upload,
+    upload_cli_session,
     validate_transcript,
 )
 from backend.copilot.transcript_builder import TranscriptBuilder
@@ -699,26 +700,6 @@ async def _compress_session_messages(
     return messages
 
 
-def is_transcript_stale(dl: TranscriptDownload | None, session_msg_count: int) -> bool:
-    """Return ``True`` when a download doesn't cover the current session.
-
-    A transcript is stale when it has a known ``message_count`` and that
-    count doesn't reach ``session_msg_count - 1`` (i.e. the session has
-    already advanced beyond what the stored transcript captures).
-    Loading a stale transcript would silently drop intermediate turns,
-    so callers should treat stale as "skip load, skip upload".
-
-    An unknown ``message_count`` (``0``) is treated as **not stale**
-    because older transcripts uploaded before msg_count tracking
-    existed must still be usable.
-    """
-    if dl is None:
-        return False
-    if not dl.message_count:
-        return False
-    return dl.message_count < session_msg_count - 1
-
-
 def should_upload_transcript(
     user_id: str | None, transcript_covers_prefix: bool
 ) -> bool:
@@ -738,40 +719,49 @@ async def _load_prior_transcript(
     session_msg_count: int,
     transcript_builder: TranscriptBuilder,
 ) -> bool:
-    """Download and load the prior transcript into ``transcript_builder``.
+    """Download and load the prior CLI session into ``transcript_builder``.
 
-    Returns ``True`` when the loaded transcript fully covers the session
+    Returns ``True`` when the loaded session fully covers the session
     prefix; ``False`` otherwise (stale, missing, invalid, or download
     error).  Callers should suppress uploads when this returns ``False``
     to avoid overwriting a more complete version in storage.
     """
     try:
-        dl = await download_transcript(user_id, session_id, log_prefix="[Baseline]")
+        restore = await restore_cli_session(
+            user_id, session_id, log_prefix="[Baseline]"
+        )
     except Exception as e:
-        logger.warning("[Baseline] Transcript download failed: %s", e)
+        logger.warning("[Baseline] Session restore failed: %s", e)
         return False
 
-    if dl is None:
-        logger.debug("[Baseline] No transcript available")
+    if restore is None:
+        logger.debug("[Baseline] No CLI session available")
         return False
 
-    if not validate_transcript(dl.content):
-        logger.warning("[Baseline] Downloaded transcript but invalid")
+    try:
+        raw_str = restore.content.decode("utf-8")
+    except UnicodeDecodeError:
+        logger.warning("[Baseline] CLI session content is not valid UTF-8")
         return False
 
-    if is_transcript_stale(dl, session_msg_count):
+    stripped = strip_for_upload(raw_str)
+    if not validate_transcript(stripped):
+        logger.warning("[Baseline] CLI session content invalid after strip")
+        return False
+
+    if restore.message_count > 0 and restore.message_count < session_msg_count - 1:
         logger.warning(
-            "[Baseline] Transcript stale: covers %d of %d messages, skipping",
-            dl.message_count,
+            "[Baseline] Session stale: covers %d of %d messages, skipping",
+            restore.message_count,
             session_msg_count,
         )
         return False
 
-    transcript_builder.load_previous(dl.content, log_prefix="[Baseline]")
+    transcript_builder.load_previous(stripped, log_prefix="[Baseline]")
     logger.info(
-        "[Baseline] Loaded transcript: %dB, msg_count=%d",
-        len(dl.content),
-        dl.message_count,
+        "[Baseline] Loaded CLI session: %dB, msg_count=%d",
+        len(restore.content),
+        restore.message_count,
     )
     return True
 
@@ -804,13 +794,12 @@ async def _upload_final_transcript(
         # orphaned coroutine; shield it so cancellation of this caller doesn't
         # abort the in-flight GCS write.
         upload_task = asyncio.create_task(
-            upload_transcript(
+            upload_cli_session(
                 user_id=user_id,
                 session_id=session_id,
-                content=content,
+                content=content.encode("utf-8"),
                 message_count=session_msg_count,
                 log_prefix="[Baseline]",
-                skip_strip=True,
             )
         )
         _background_tasks.add(upload_task)

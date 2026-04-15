@@ -7,7 +7,7 @@ import pytest
 from .model import create_chat_session, get_chat_session, upsert_chat_session
 from .response_model import StreamError, StreamTextDelta
 from .sdk import service as sdk_service
-from .transcript import download_transcript
+from .transcript import restore_cli_session
 
 logger = logging.getLogger(__name__)
 
@@ -61,18 +61,18 @@ async def test_sdk_resume_multi_turn(setup_test_user, test_user_id):
     # (CLI version, platform).  When that happens, multi-turn still works
     # via conversation compression (non-resume path), but we can't test
     # the --resume round-trip.
-    transcript = None
+    cli_session = None
     for _ in range(10):
         await asyncio.sleep(0.5)
-        transcript = await download_transcript(test_user_id, session.session_id)
-        if transcript:
+        cli_session = await restore_cli_session(test_user_id, session.session_id)
+        if cli_session:
             break
-    if not transcript:
+    if not cli_session:
         return pytest.skip(
             "CLI did not produce a usable transcript — "
             "cannot test --resume round-trip in this environment"
         )
-    logger.info(f"Turn 1 transcript uploaded: {len(transcript.content)} bytes")
+    logger.info(f"Turn 1 CLI session uploaded: {len(cli_session.content)} bytes")
 
     # Reload session for turn 2
     session = await get_chat_session(session.session_id, test_user_id)
