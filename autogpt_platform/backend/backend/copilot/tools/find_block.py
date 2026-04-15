@@ -139,7 +139,8 @@ class FindBlockTool(BaseTool):
                         block.block_type in COPILOT_EXCLUDED_BLOCK_TYPES
                         or block.id in COPILOT_EXCLUDED_BLOCK_IDS
                     )
-                    if is_excluded and not for_agent_generation:
+                    if is_excluded:
+                        # MCP_TOOL is always excluded — use run_mcp_tool instead.
                         if block.block_type == BlockType.MCP_TOOL:
                             return NoResultsResponse(
                                 message=(
@@ -153,17 +154,19 @@ class FindBlockTool(BaseTool):
                                 ],
                                 session_id=session_id,
                             )
-                        return NoResultsResponse(
-                            message=(
-                                f"Block '{block.name}' (ID: {block.id}) is not available "
-                                "in CoPilot. It can only be used within agent graphs."
-                            ),
-                            suggestions=[
-                                "Search for an alternative block by name",
-                                "Use this block in an agent graph instead",
-                            ],
-                            session_id=session_id,
-                        )
+                        # Other graph-only blocks are allowed when building an agent.
+                        if not for_agent_generation:
+                            return NoResultsResponse(
+                                message=(
+                                    f"Block '{block.name}' (ID: {block.id}) is not available "
+                                    "in CoPilot. It can only be used within agent graphs."
+                                ),
+                                suggestions=[
+                                    "Search for an alternative block by name",
+                                    "Use this block in an agent graph instead",
+                                ],
+                                session_id=session_id,
+                            )
 
                     # Check block-level permissions — hide denied blocks entirely
                     perms = get_current_permissions()
@@ -234,8 +237,11 @@ class FindBlockTool(BaseTool):
                 if not block or block.disabled:
                     continue
 
-                # Skip blocks excluded from CoPilot (graph-only blocks),
-                # unless the caller is building an agent graph.
+                # MCP_TOOL is always excluded — use run_mcp_tool instead.
+                if block.block_type == BlockType.MCP_TOOL:
+                    continue
+
+                # Other graph-only blocks are skipped unless building an agent graph.
                 if not for_agent_generation and (
                     block.block_type in COPILOT_EXCLUDED_BLOCK_TYPES
                     or block.id in COPILOT_EXCLUDED_BLOCK_IDS

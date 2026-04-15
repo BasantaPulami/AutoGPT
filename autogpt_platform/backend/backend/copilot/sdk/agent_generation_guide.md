@@ -34,9 +34,11 @@ Steps:
    always inspect the current graph first so you know exactly what to change.
    Avoid using `include_graph=true` with broad keyword searches, as fetching
    multiple graphs at once is expensive and consumes LLM context budget.
-2. **Discover blocks**: Call `find_block(query, include_schemas=true)` to
+2. **Discover blocks**: Call `find_block(query, include_schemas=true, for_agent_generation=true)` to
    search for relevant blocks. This returns block IDs, names, descriptions,
-   and full input/output schemas.
+   and full input/output schemas. The `for_agent_generation=true` flag is
+   required to surface graph-only blocks such as AgentInputBlock,
+   AgentOutputBlock, and OrchestratorBlock.
 3. **Find library agents**: Call `find_library_agent` to discover reusable
    agents that can be composed as sub-agents via `AgentExecutorBlock`.
 4. **Generate/modify JSON**: Build or modify the agent JSON using block schemas:
