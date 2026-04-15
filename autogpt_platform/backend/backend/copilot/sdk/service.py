@@ -95,6 +95,7 @@ from ..transcript import (
     cleanup_stale_project_dirs,
     compact_transcript,
     download_transcript,
+    maybe_compact_cli_session,
     read_compacted_entries,
     restore_cli_session,
     upload_cli_session,
@@ -2501,6 +2502,14 @@ async def stream_chat_completion_sdk(
                     user_id, session_id, sdk_cwd, log_prefix=log_prefix
                 )
                 if cli_restored:
+                    # Proactively compact the CLI session if it's large enough
+                    # to risk triggering auto-compaction mid-turn.  The CLI's
+                    # silent auto-compact bypasses our PreCompact hook and
+                    # loses context uncontrollably; compacting proactively here
+                    # keeps the session well below the ~200K-token threshold.
+                    await maybe_compact_cli_session(
+                        sdk_cwd, session_id, config.model, log_prefix
+                    )
                     use_resume = True
                     resume_file = session_id  # CLI --resume expects UUID, not file path
                     transcript_msg_count = dl.message_count

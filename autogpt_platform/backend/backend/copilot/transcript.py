@@ -689,6 +689,15 @@ def _cli_session_storage_path_parts(
     )
 
 
+# Byte-size threshold for proactive pre-query CLI session compaction.
+# Measured from production session 93ecf7c9: 233KB file → 204K tokens
+# (≈0.88 bytes/token).  120KB ≈ 105K tokens — roughly half the CLI's
+# ~200K auto-compaction threshold.  Compacting proactively here prevents
+# the CLI from silently auto-compacting mid-turn, which bypasses our
+# PreCompact hook and causes uncontrolled context loss.
+_PROACTIVE_COMPACT_THRESHOLD_BYTES = 120_000
+
+
 async def upload_cli_session(
     user_id: str,
     session_id: str,
@@ -829,6 +838,96 @@ async def restore_cli_session(
         return True
     except OSError as e:
         logger.warning("%s Failed to write CLI session file: %s", log_prefix, e)
+        return False
+
+
+async def maybe_compact_cli_session(
+    sdk_cwd: str,
+    session_id: str,
+    model: str,
+    log_prefix: str = "[Transcript]",
+) -> bool:
+    """Proactively compact the CLI native session if it risks triggering auto-compaction.
+
+    Called after ``restore_cli_session()`` succeeds and before the SDK turn starts.
+    If the session file exceeds ``_PROACTIVE_COMPACT_THRESHOLD_BYTES``, runs LLM
+    summarization via ``compact_transcript()`` and writes the smaller result back
+    to disk so ``--resume`` uses the compacted context.
+
+    This prevents the CLI from silently auto-compacting mid-turn — a path that
+    bypasses our PreCompact hook and causes uncontrolled context loss for long
+    sessions, including pure-Sonnet sessions where thinking-block stripping
+    provides no relief.
+
+    Returns ``True`` if compaction was performed and the file was updated.
+    """
+    session_file = _cli_session_path(sdk_cwd, session_id)
+    real_path = os.path.realpath(session_file)
+    projects_base = _projects_base()
+
+    if not real_path.startswith(projects_base + os.sep):
+        logger.warning(
+            "%s CLI session path outside projects base, skipping proactive compaction",
+            log_prefix,
+        )
+        return False
+
+    try:
+        raw_bytes = Path(real_path).read_bytes()
+    except FileNotFoundError:
+        logger.debug(
+            "%s CLI session not found, skipping proactive compaction", log_prefix
+        )
+        return False
+    except OSError as e:
+        logger.warning(
+            "%s Failed to read CLI session for compaction: %s", log_prefix, e
+        )
+        return False
+
+    if len(raw_bytes) < _PROACTIVE_COMPACT_THRESHOLD_BYTES:
+        logger.debug(
+            "%s CLI session %dB < threshold %dB — no proactive compaction",
+            log_prefix,
+            len(raw_bytes),
+            _PROACTIVE_COMPACT_THRESHOLD_BYTES,
+        )
+        return False
+
+    logger.info(
+        "%s CLI session %dB >= threshold %dB — running proactive compaction",
+        log_prefix,
+        len(raw_bytes),
+        _PROACTIVE_COMPACT_THRESHOLD_BYTES,
+    )
+
+    try:
+        content = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError as e:
+        logger.warning(
+            "%s CLI session is not valid UTF-8, skipping compaction: %s", log_prefix, e
+        )
+        return False
+
+    compacted = await compact_transcript(content, model=model, log_prefix=log_prefix)
+    if not compacted or compacted == content:
+        logger.warning(
+            "%s Proactive compaction produced no change — keeping original", log_prefix
+        )
+        return False
+
+    compacted_bytes = compacted.encode("utf-8")
+    try:
+        Path(real_path).write_bytes(compacted_bytes)
+        logger.info(
+            "%s Proactively compacted CLI session: %dB → %dB",
+            log_prefix,
+            len(raw_bytes),
+            len(compacted_bytes),
+        )
+        return True
+    except OSError as e:
+        logger.warning("%s Failed to write compacted CLI session: %s", log_prefix, e)
         return False
 
 

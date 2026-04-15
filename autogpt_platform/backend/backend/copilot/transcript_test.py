@@ -1285,3 +1285,161 @@ class TestRestoreCliSession:
             )
 
         assert result is False
+
+
+class TestMaybeCompactCliSession:
+    def _make_session_file(self, tmp_path, session_id: str, sdk_cwd: str, content: str):
+        import os
+        import re
+
+        from .transcript import _sanitize_id
+
+        encoded_cwd = re.sub(r"[^a-zA-Z0-9]", "-", os.path.realpath(sdk_cwd))
+        session_dir = tmp_path / encoded_cwd
+        session_dir.mkdir(parents=True, exist_ok=True)
+        session_file = session_dir / f"{_sanitize_id(session_id)}.jsonl"
+        session_file.write_text(content, encoding="utf-8")
+        return session_file
+
+    def test_skips_small_file(self, tmp_path):
+        """Files below the threshold are not compacted."""
+        import asyncio
+        from unittest.mock import patch
+
+        from .transcript import maybe_compact_cli_session
+
+        session_id = "12345678-0000-0000-0000-000000000020"
+        sdk_cwd = str(tmp_path)
+        small_content = (
+            '{"type":"user","uuid":"u1","message":{"role":"user","content":"hi"}}\n'
+        )
+        session_file = self._make_session_file(
+            tmp_path, session_id, sdk_cwd, small_content
+        )
+
+        with patch(
+            "backend.copilot.transcript._projects_base",
+            return_value=str(tmp_path),
+        ):
+            result = asyncio.run(
+                maybe_compact_cli_session(
+                    sdk_cwd=sdk_cwd,
+                    session_id=session_id,
+                    model="claude-sonnet-4",
+                )
+            )
+
+        assert result is False
+        # File should be untouched.
+        assert session_file.read_text(encoding="utf-8") == small_content
+
+    def test_compacts_large_file_and_writes_back(self, tmp_path):
+        """Files above the threshold are compacted and the result written to disk."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        from .transcript import (
+            _PROACTIVE_COMPACT_THRESHOLD_BYTES,
+            maybe_compact_cli_session,
+        )
+
+        session_id = "12345678-0000-0000-0000-000000000021"
+        sdk_cwd = str(tmp_path)
+
+        # Build a valid JSONL session large enough to exceed the threshold.
+        u1 = (
+            '{"type":"user","uuid":"u1","parentUuid":"","message":{"role":"user","content":"'
+            + ("x" * 1000)
+            + '"}}'
+        )
+        a1 = (
+            '{"type":"assistant","uuid":"a1","parentUuid":"u1","message":{"id":"msg_a1","role":"assistant","model":"","type":"message","content":[{"type":"text","text":"'
+            + ("y" * 1000)
+            + '"}],"stop_reason":"end_turn","stop_sequence":null}}'
+        )
+        single_pair = u1 + "\n" + a1 + "\n"
+        repeat = (_PROACTIVE_COMPACT_THRESHOLD_BYTES // len(single_pair.encode())) + 2
+        large_content = single_pair * repeat
+
+        session_file = self._make_session_file(
+            tmp_path, session_id, sdk_cwd, large_content
+        )
+
+        compacted_content = (
+            '{"type":"user","uuid":"c1","parentUuid":"","message":{"role":"user","content":"summary"}}\n'
+            '{"type":"assistant","uuid":"c2","parentUuid":"c1","message":{"id":"msg_c2","role":"assistant","model":"","type":"message","content":[{"type":"text","text":"compacted"}],"stop_reason":"end_turn","stop_sequence":null}}\n'
+        )
+
+        with (
+            patch(
+                "backend.copilot.transcript._projects_base",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "backend.copilot.transcript.compact_transcript",
+                new_callable=AsyncMock,
+                return_value=compacted_content,
+            ),
+        ):
+            result = asyncio.run(
+                maybe_compact_cli_session(
+                    sdk_cwd=sdk_cwd,
+                    session_id=session_id,
+                    model="claude-sonnet-4",
+                )
+            )
+
+        assert result is True
+        # File on disk should now contain the compacted content.
+        assert session_file.read_text(encoding="utf-8") == compacted_content
+
+    def test_keeps_original_when_compaction_fails(self, tmp_path):
+        """If compact_transcript returns None, the original file is left intact."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        from .transcript import (
+            _PROACTIVE_COMPACT_THRESHOLD_BYTES,
+            maybe_compact_cli_session,
+        )
+
+        session_id = "12345678-0000-0000-0000-000000000022"
+        sdk_cwd = str(tmp_path)
+
+        single_pair = (
+            '{"type":"user","uuid":"u1","parentUuid":"","message":{"role":"user","content":"'
+            + ("x" * 1000)
+            + '"}}\n'
+            '{"type":"assistant","uuid":"a1","parentUuid":"u1","message":{"id":"msg_a1","role":"assistant","model":"","type":"message","content":[{"type":"text","text":"'
+            + ("y" * 1000)
+            + '"}],"stop_reason":"end_turn","stop_sequence":null}}\n'
+        )
+        repeat = (_PROACTIVE_COMPACT_THRESHOLD_BYTES // len(single_pair.encode())) + 2
+        large_content = single_pair * repeat
+
+        session_file = self._make_session_file(
+            tmp_path, session_id, sdk_cwd, large_content
+        )
+
+        with (
+            patch(
+                "backend.copilot.transcript._projects_base",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "backend.copilot.transcript.compact_transcript",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            result = asyncio.run(
+                maybe_compact_cli_session(
+                    sdk_cwd=sdk_cwd,
+                    session_id=session_id,
+                    model="claude-sonnet-4",
+                )
+            )
+
+        assert result is False
+        # File should be unchanged.
+        assert session_file.read_text(encoding="utf-8") == large_content
