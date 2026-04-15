@@ -354,6 +354,12 @@ class _StreamContext:
 # Index 0 = first retry, 1 = second retry; last value applies beyond that.
 _RETRY_TARGET_TOKENS: tuple[int, ...] = (50_000, 15_000)
 
+# Below this token budget the model context is so tight that injecting any
+# conversation history would likely exceed the limit regardless of content.
+# _build_query_message returns the bare message when target_tokens falls to
+# or below this floor, giving the user a response instead of a hard error.
+_BARE_MESSAGE_TOKEN_FLOOR: int = 5_000
+
 # Tight token budget for seeding the transcript builder on turns where no
 # CLI native session exists.  Kept below _RETRY_TARGET_TOKENS[0] so the
 # seeded JSONL upload stays compact and future gap injections are small.
@@ -1126,6 +1132,23 @@ async def _build_query_message(
         # prefix entirely, so always compress the full prior session here.
         # compress_context handles size reduction internally (LLM summarize →
         # content truncate → middle-out delete → first/last trim).
+
+        # Final escape hatch: if the token budget is at or below the floor,
+        # the model context is so tight that even fully compressed history
+        # would risk a "prompt too long" error.  Return the bare message so
+        # the user always gets a response rather than a hard failure.
+        if target_tokens is not None and target_tokens <= _BARE_MESSAGE_TOKEN_FLOOR:
+            logger.warning(
+                "[SDK] [%s] target_tokens=%d at or below floor (%d) —"
+                " skipping history injection to guarantee response delivery"
+                " (session has %d messages)",
+                session_id[:8],
+                target_tokens,
+                _BARE_MESSAGE_TOKEN_FLOOR,
+                msg_count,
+            )
+            return current_message, False
+
         logger.warning(
             "[SDK] [%s] No --resume for %d-message session — compressing"
             " full session history (pod affinity issue or first turn after"

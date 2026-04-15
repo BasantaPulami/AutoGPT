@@ -6,6 +6,7 @@ import pytest
 
 from backend.copilot.model import ChatMessage, ChatSession
 from backend.copilot.sdk.service import (
+    _BARE_MESSAGE_TOKEN_FLOOR,
     _build_query_message,
     _format_conversation_context,
 )
@@ -281,3 +282,85 @@ async def test_build_query_no_resume_multi_message_compacted(monkeypatch):
         session_id="test-session",
     )
     assert was_compacted is True
+
+
+@pytest.mark.asyncio
+async def test_build_query_no_resume_at_token_floor():
+    """When target_tokens is at or below the floor, return bare message.
+
+    This is the final escape hatch: if the retry budget is exhausted and
+    even the most aggressive compression might not fit, skip history
+    injection entirely so the user always gets a response.
+    """
+    session = _make_session(
+        [
+            ChatMessage(role="user", content="old question"),
+            ChatMessage(role="assistant", content="old answer"),
+            ChatMessage(role="user", content="new question"),
+        ]
+    )
+    result, was_compacted = await _build_query_message(
+        "new question",
+        session,
+        use_resume=False,
+        transcript_msg_count=0,
+        session_id="test-session",
+        target_tokens=_BARE_MESSAGE_TOKEN_FLOOR,
+    )
+    # At the floor threshold, no history is injected
+    assert result == "new question"
+    assert was_compacted is False
+
+
+@pytest.mark.asyncio
+async def test_build_query_no_resume_below_token_floor():
+    """target_tokens strictly below floor also returns bare message."""
+    session = _make_session(
+        [
+            ChatMessage(role="user", content="old"),
+            ChatMessage(role="assistant", content="reply"),
+            ChatMessage(role="user", content="new"),
+        ]
+    )
+    result, was_compacted = await _build_query_message(
+        "new",
+        session,
+        use_resume=False,
+        transcript_msg_count=0,
+        session_id="test-session",
+        target_tokens=_BARE_MESSAGE_TOKEN_FLOOR - 1,
+    )
+    assert result == "new"
+    assert was_compacted is False
+
+
+@pytest.mark.asyncio
+async def test_build_query_no_resume_above_token_floor_compresses(monkeypatch):
+    """target_tokens just above the floor still triggers compression."""
+    session = _make_session(
+        [
+            ChatMessage(role="user", content="old"),
+            ChatMessage(role="assistant", content="reply"),
+            ChatMessage(role="user", content="new"),
+        ]
+    )
+
+    async def _mock_compress(msgs, target_tokens=None):
+        return msgs, False
+
+    monkeypatch.setattr(
+        "backend.copilot.sdk.service._compress_messages",
+        _mock_compress,
+    )
+
+    result, was_compacted = await _build_query_message(
+        "new",
+        session,
+        use_resume=False,
+        transcript_msg_count=0,
+        session_id="test-session",
+        target_tokens=_BARE_MESSAGE_TOKEN_FLOOR + 1,
+    )
+    # Above the floor → history is injected (not the bare message)
+    assert "<conversation_history>" in result
+    assert "Now, the user says:\nnew" in result
