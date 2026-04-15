@@ -29,10 +29,11 @@ export function Text({
 }: TextProps) {
   const variantClasses = variants[size || variant] || variants.body;
   const Element = outerAs || variantElementMap[variant];
-  const combinedClassName = `${variantClasses} ${
-    unmask ? "sentry-unmask" : ""
-  } ${className}`.trim();
-  const combinedClassName = cn(variantClasses, className);
+  const combinedClassName = cn(
+    variantClasses,
+    unmask && "sentry-unmask",
+    className,
+  );
 
   return React.createElement(
     Element,
