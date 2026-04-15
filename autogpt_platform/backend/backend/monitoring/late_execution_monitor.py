@@ -103,8 +103,17 @@ class LateExecutionMonitor:
 
         sentry_capture_error(error)
 
-        # Generate correlation ID based on the threshold and number of late executions
-        correlation_id = f"late_execution_{self.config.execution_late_notification_threshold_secs}s_{num_total_late}_execs_{num_users}_users"
+        late_execution_types = []
+        if queued_late_executions:
+            late_execution_types.append("queued")
+        if running_late_executions:
+            late_execution_types.append("running")
+
+        correlation_id = (
+            "late_execution_"
+            f"{'_'.join(late_execution_types)}_"
+            f"{self.config.execution_late_notification_threshold_secs}s"
+        )
 
         # Send both Discord and AllQuiet alerts
         self.notification_client.system_alert(

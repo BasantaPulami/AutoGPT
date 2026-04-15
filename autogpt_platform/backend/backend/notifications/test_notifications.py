@@ -8,6 +8,7 @@ from prisma.enums import NotificationType
 
 from backend.data.notifications import AgentRunData, NotificationEventModel
 from backend.notifications.notifications import NotificationManager
+from backend.util.metrics import DiscordChannel
 
 
 class TestNotificationErrorHandling:
@@ -165,6 +166,55 @@ class TestNotificationErrorHandling:
             )
 
             # No further processing should occur after 406
+
+    @pytest.mark.asyncio
+    async def test_system_alert_sends_discord_and_allquiet_with_correlation_id(
+        self, notification_manager
+    ):
+        with patch(
+            "backend.notifications.notifications.discord_send_alert",
+            new_callable=AsyncMock,
+        ) as mock_discord_send_alert, patch(
+            "backend.notifications.notifications.send_allquiet_alert",
+            new_callable=AsyncMock,
+        ) as mock_send_allquiet_alert:
+            await notification_manager.system_alert(
+                content="🚨 **Alert Title**\nDetails here",
+                channel=DiscordChannel.PRODUCT,
+                correlation_id="alert-123",
+                severity="critical",
+                extra_attributes={"key": "value"},
+            )
+
+        mock_discord_send_alert.assert_awaited_once_with(
+            "🚨 **Alert Title**\nDetails here", DiscordChannel.PRODUCT
+        )
+        mock_send_allquiet_alert.assert_awaited_once()
+        alert = mock_send_allquiet_alert.await_args_list[0].args[0]
+        assert alert.title == "Alert Title"
+        assert alert.description == "🚨 **Alert Title**\nDetails here"
+        assert alert.correlation_id == "alert-123"
+        assert alert.severity == "critical"
+        assert alert.channel == DiscordChannel.PRODUCT.value
+        assert alert.extra_attributes == {"key": "value"}
+
+    @pytest.mark.asyncio
+    async def test_system_alert_skips_allquiet_without_correlation_id(
+        self, notification_manager
+    ):
+        with patch(
+            "backend.notifications.notifications.discord_send_alert",
+            new_callable=AsyncMock,
+        ) as mock_discord_send_alert, patch(
+            "backend.notifications.notifications.send_allquiet_alert",
+            new_callable=AsyncMock,
+        ) as mock_send_allquiet_alert:
+            await notification_manager.system_alert(content="Alert only")
+
+        mock_discord_send_alert.assert_awaited_once_with(
+            "Alert only", DiscordChannel.PLATFORM
+        )
+        mock_send_allquiet_alert.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_422_permanently_removes_malformed_notification(

@@ -85,12 +85,14 @@ async def test_handle_insufficient_funds_sends_discord_alert_first_time(
         assert call_args[0][0] == expected_key
         assert call_args[1]["nx"] is True
 
-        # Verify Discord alert was sent
-        mock_client.discord_system_alert.assert_called_once()
-        discord_message = mock_client.discord_system_alert.call_args[0][0]
+        # Verify system alert was sent (includes Discord and AllQuiet)
+        mock_client.system_alert.assert_called_once()
+        alert_call = mock_client.system_alert.call_args
+        discord_message = alert_call[1]["content"]
         assert "Insufficient Funds Alert" in discord_message
         assert "test@example.com" in discord_message
         assert "Test Agent" in discord_message
+        assert alert_call[1]["correlation_id"] == f"insufficient_funds_{user_id}"
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -144,8 +146,8 @@ async def test_handle_insufficient_funds_skips_duplicate_notifications(
         # Verify email notification was NOT queued (deduplication worked)
         mock_queue_notif.assert_not_called()
 
-        # Verify Discord alert was NOT sent (deduplication worked)
-        mock_client.discord_system_alert.assert_not_called()
+        # Verify system alert was NOT sent (deduplication worked)
+        mock_client.system_alert.assert_not_called()
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -205,8 +207,8 @@ async def test_handle_insufficient_funds_different_agents_get_separate_alerts(
             e=error,
         )
 
-        # Verify Discord alerts were sent for both agents
-        assert mock_client.discord_system_alert.call_count == 2
+        # Verify system alerts were sent for both agents
+        assert mock_client.system_alert.call_count == 2
 
         # Verify Redis was called with different keys
         assert mock_redis_client.set.call_count == 2
@@ -356,8 +358,8 @@ async def test_handle_insufficient_funds_continues_on_redis_error(
         # Verify email notification was still queued despite Redis error
         mock_queue_notif.assert_called_once()
 
-        # Verify Discord alert was still sent despite Redis error
-        mock_client.discord_system_alert.assert_called_once()
+        # Verify system alert was still sent despite Redis error
+        mock_client.system_alert.assert_called_once()
 
 
 @pytest.mark.asyncio(loop_scope="session")
