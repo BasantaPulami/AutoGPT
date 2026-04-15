@@ -941,6 +941,12 @@ async def stream_chat_post(
         subscriber_queue = None
         first_chunk_yielded = False
         chunks_yielded = 0
+        # True for every exit path except GeneratorExit (client disconnect).
+        # On disconnect the backend turn is still running — releasing the lock
+        # there would reopen the infra-retry duplicate window. The 30 s TTL
+        # is the fallback. All other exits (normal finish, early return, error)
+        # should release so the user can re-send the same message.
+        release_dedup_on_exit = True
         try:
             # Subscribe from the position we captured before enqueuing
             # This avoids replaying old messages while catching all new ones
@@ -952,9 +958,7 @@ async def stream_chat_post(
 
             if subscriber_queue is None:
                 yield StreamFinish().to_sse()
-                if dedup_lock:
-                    await dedup_lock.release()
-                return
+                return  # finally releases dedup_lock
 
             # Read from the subscriber queue and yield to SSE
             logger.info(
@@ -983,7 +987,6 @@ async def stream_chat_post(
 
                     yield chunk.to_sse()
 
-                    # Check for finish signal
                     if isinstance(chunk, StreamFinish):
                         total_time = time_module.perf_counter() - event_gen_start
                         logger.info(
@@ -997,11 +1000,8 @@ async def stream_chat_post(
                                 }
                             },
                         )
-                        # Release dedup key only on true turn completion.
-                        # The 30 s TTL is the fallback if this delete fails.
-                        if dedup_lock:
-                            await dedup_lock.release()
-                        break
+                        break  # finally releases dedup_lock
+
                 except asyncio.TimeoutError:
                     yield StreamHeartbeat().to_sse()
 
@@ -1016,10 +1016,7 @@ async def stream_chat_post(
                     }
                 },
             )
-            # Do NOT release the dedup lock on client disconnect — the backend
-            # turn is still running, and releasing here would reopen the window
-            # for infra-level retries to create duplicate turns.
-            pass  # Client disconnected - background task continues
+            release_dedup_on_exit = False
         except Exception as e:
             elapsed = (time_module.perf_counter() - event_gen_start) * 1000
             logger.error(
@@ -1034,10 +1031,10 @@ async def stream_chat_post(
                 code="stream_error",
             ).to_sse()
             yield StreamFinish().to_sse()
-            # Release dedup lock — turn failed, allow retry.
-            if dedup_lock:
-                await dedup_lock.release()
+            # finally releases dedup_lock
         finally:
+            if dedup_lock and release_dedup_on_exit:
+                await dedup_lock.release()
             # Unsubscribe when client disconnects or stream ends
             if subscriber_queue is not None:
                 try:
