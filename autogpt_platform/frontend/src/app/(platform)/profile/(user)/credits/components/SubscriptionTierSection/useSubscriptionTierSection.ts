@@ -85,7 +85,9 @@ export function useSubscriptionTierSection() {
       toast({
         title: "Subscription updated",
         description:
-          "Your plan will be downgraded at the end of your current billing cycle.",
+          tier === "FREE"
+            ? "Your plan will be downgraded to Free at the end of your current billing period."
+            : "Your subscription has been updated.",
       });
     } catch (e: unknown) {
       const msg =
