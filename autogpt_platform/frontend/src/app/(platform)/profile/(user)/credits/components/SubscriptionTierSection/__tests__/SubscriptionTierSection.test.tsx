@@ -355,4 +355,24 @@ describe("SubscriptionTierSection", () => {
     // No toast should fire — the user simply abandoned checkout
     expect(mockToast).not.toHaveBeenCalled();
   });
+
+  it("shows 'Confirm Upgrade' button (not 'Continue to Checkout') for paid→paid tier change", () => {
+    // PRO user upgrading to BUSINESS — modify in-place, no Stripe redirect
+    setupMocks({ subscription: makeSubscription({ tier: "PRO" }) });
+    render(<SubscriptionTierSection />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /upgrade to business/i }),
+    );
+
+    // For paid→paid, the button should say "Confirm Upgrade" not "Continue to Checkout"
+    expect(
+      screen.getByRole("button", { name: /confirm upgrade/i }),
+    ).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: /continue to checkout/i }),
+    ).toBeNull();
+    // Dialog body should mention "take effect immediately" not "redirected to Stripe"
+    expect(screen.getByText(/take effect immediately/i)).toBeDefined();
+  });
 });
