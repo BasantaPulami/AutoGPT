@@ -3669,43 +3669,20 @@ async def stream_chat_completion_sdk(
                     sdk_cwd, session_id, log_prefix
                 )
                 if _cli_content:
-                    # Compute JSONL coverage watermark.
-                    # Using len(session.messages) (DB count) causes an
-                    # "inflated watermark" bug: when prior turns fail to
-                    # upload, the GCS JSONL is stale but its meta.json
-                    # watermark matches the DB count, so the next turn's
-                    # gap-fill check (transcript_msg_count < msg_count-1)
-                    # never triggers and the model silently loses context.
-                    # Fix: when we have a reliable watermark from the
-                    # downloaded transcript (use_resume=True,
-                    # transcript_msg_count>0), set watermark =
-                    # previous_coverage + 2 (current user+asst pair).
-                    # This accurately reflects what is actually in the
-                    # JSONL so any stale gap is detected next turn.
-                    # For all other cases (fresh session, restore failed,
-                    # old-format meta with count=0, retry reset) fall back
-                    # to len(session.messages) to preserve original
-                    # behaviour and avoid triggering spurious gap-fills
-                    # on sessions whose watermark we cannot determine.
-                    _final_use_resume = (
-                        state.use_resume if state is not None else use_resume
-                    )
-                    _final_tmsg_count = (
-                        state.transcript_msg_count
-                        if state is not None
-                        else transcript_msg_count
-                    )
-                    if _final_use_resume and _final_tmsg_count > 0:
-                        # +2 = current user turn + current assistant response.
-                        # For tool-use turns with multiple assistant+tool pairs this
-                        # under-counts (e.g. +4), but the resulting underestimate is
-                        # safe: next turn's detect_gap returns the uncovered entries
-                        # as a small gap that is filled from DB.  Over-estimating
-                        # (using len(session.messages)) would suppress gap detection
-                        # when a prior upload was missed — the inflated-watermark bug.
-                        _jsonl_covered = _final_tmsg_count + 2
-                    else:
-                        _jsonl_covered = len(session.messages)
+                    # Watermark = number of DB messages this transcript covers.
+                    # len(session.messages) is accurate: the CLI session file
+                    # was just written after the turn completed, so it covers
+                    # all messages through this turn.  Any gap from a prior
+                    # missed upload was already detected by detect_gap and
+                    # injected as context, so the model has the full history.
+                    #
+                    # Previously this used _final_tmsg_count + 2, which
+                    # under-counted for tool-use turns (delta = 2 + 2*N_tool_calls),
+                    # causing persistent spurious gap-fills on every subsequent turn.
+                    # That concern was addressed by the inflated-watermark fix
+                    # (using the GCS watermark as the anchor for gap detection),
+                    # which makes len(session.messages) safe to use here.
+                    _jsonl_covered = len(session.messages)
                     await asyncio.shield(
                         upload_transcript(
                             user_id=user_id,
