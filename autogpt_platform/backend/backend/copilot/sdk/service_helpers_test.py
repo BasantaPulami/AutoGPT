@@ -859,6 +859,10 @@ class TestRestoreCliSessionModeCheck:
         assert result.context_messages[0].role == "user"
         assert result.context_messages[1].role == "assistant"
         assert "TRANSCRIPT_ASSISTANT" in (result.context_messages[1].content or "")
+        # transcript_content must be non-empty so the _seed_transcript guard in
+        # stream_chat_completion_sdk skips DB reconstruction (which would duplicate
+        # builder entries since load_previous appends).
+        assert result.transcript_content != ""
 
     @pytest.mark.asyncio
     async def test_baseline_mode_gap_present_context_includes_gap(self, tmp_path):

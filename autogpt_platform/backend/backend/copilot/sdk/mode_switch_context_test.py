@@ -277,7 +277,7 @@ class TestSdkToFastModeSwitch:
             "backend.copilot.baseline.service.download_transcript",
             new=AsyncMock(return_value=restore),
         ):
-            covers = await _load_prior_transcript(
+            covers, dl = await _load_prior_transcript(
                 user_id="user-1",
                 session_id="session-1",
                 session_messages=[
@@ -290,6 +290,7 @@ class TestSdkToFastModeSwitch:
 
         # CLI session is valid and covers the prefix.
         assert covers is True
+        assert dl is not None
         assert baseline_builder.entry_count == 2
 
     @pytest.mark.asyncio
@@ -332,7 +333,7 @@ class TestSdkToFastModeSwitch:
             "backend.copilot.baseline.service.download_transcript",
             new=AsyncMock(return_value=restore),
         ):
-            covers = await _load_prior_transcript(
+            covers, dl = await _load_prior_transcript(
                 user_id="user-1",
                 session_id="session-1",
                 session_messages=session_messages,
@@ -341,5 +342,6 @@ class TestSdkToFastModeSwitch:
 
         # With gap filling, covers is True and gap messages are appended.
         assert covers is True
+        assert dl is not None
         # 2 from transcript + 7 gap messages (positions 2..8, excluding last user turn)
         assert baseline_builder.entry_count == 9

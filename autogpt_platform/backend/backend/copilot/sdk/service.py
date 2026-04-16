@@ -2538,6 +2538,9 @@ async def _restore_cli_session_for_turn(
     )
 
     # Load baseline transcript content into builder so the upload path has accurate state.
+    # Also sets result.transcript_content so the _seed_transcript guard in the caller
+    # (``not transcript_content``) does not overwrite this builder state with a DB
+    # reconstruction — which would duplicate entries since load_previous appends.
     if result.baseline_download is not None:
         try:
             raw_for_builder = result.baseline_download.content
@@ -2546,6 +2549,7 @@ async def _restore_cli_session_for_turn(
             stripped = strip_for_upload(raw_for_builder)
             if validate_transcript(stripped):
                 transcript_builder.load_previous(stripped, log_prefix=log_prefix)
+                result.transcript_content = stripped
         except Exception as _load_err:
             logger.debug(
                 "%s Could not load baseline transcript into builder: %s",

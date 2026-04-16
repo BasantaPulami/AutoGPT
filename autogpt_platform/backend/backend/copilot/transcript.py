@@ -29,7 +29,7 @@ from backend.util.prompt import CompressResult, compress_context
 from backend.util.workspace_storage import GCSWorkspaceStorage, get_workspace_storage
 
 if TYPE_CHECKING:
-    from backend.copilot.model import ChatMessage
+    from .model import ChatMessage
 
 logger = logging.getLogger(__name__)
 
@@ -858,7 +858,7 @@ def extract_context_messages(
         A list of ``ChatMessage`` objects covering the prior conversation
         context, suitable for injection as conversation history.
     """
-    from backend.copilot.model import ChatMessage as _ChatMessage  # runtime import
+    from .model import ChatMessage as _ChatMessage  # runtime import
 
     prior = session_messages[:-1]
 
