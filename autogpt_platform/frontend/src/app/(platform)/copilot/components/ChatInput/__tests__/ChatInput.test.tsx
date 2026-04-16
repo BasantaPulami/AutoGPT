@@ -23,6 +23,8 @@ vi.mock("@/app/(platform)/copilot/store", () => ({
     setCopilotChatMode: mockSetCopilotChatMode,
     copilotLlmModel: mockCopilotLlmModel,
     setCopilotLlmModel: mockSetCopilotLlmModel,
+    isDryRun: false,
+    setIsDryRun: vi.fn(),
     initialPrompt: null,
     setInitialPrompt: vi.fn(),
   }),
@@ -160,10 +162,24 @@ describe("ChatInput mode toggle", () => {
     expect(mockSetCopilotChatMode).toHaveBeenCalledWith("extended_thinking");
   });
 
-  it("hides toggle button when streaming", () => {
+  it("hides toggle buttons when streaming", () => {
     mockFlagValue = true;
     render(<ChatInput onSend={mockOnSend} isStreaming />);
-    expect(screen.queryByLabelText(/switch to/i)).toBeNull();
+    expect(
+      screen.queryByLabelText(/switch to (fast|extended thinking) mode/i),
+    ).toBeNull();
+    expect(
+      screen.queryByLabelText(/switch to (advanced|balanced|standard) model/i),
+    ).toBeNull();
+  });
+
+  it("shows mode toggle when hasSession is true and not streaming", () => {
+    // Mode is per-message — can be changed between turns even in an existing session.
+    mockFlagValue = true;
+    render(<ChatInput onSend={mockOnSend} hasSession />);
+    expect(
+      screen.queryByLabelText(/switch to (fast|extended thinking) mode/i),
+    ).not.toBeNull();
   });
 
   it("exposes aria-pressed=true in extended_thinking mode", () => {
@@ -223,7 +239,7 @@ describe("ChatInput model toggle", () => {
     mockFlagValue = true;
     mockCopilotLlmModel = "advanced";
     render(<ChatInput onSend={mockOnSend} />);
-    fireEvent.click(screen.getByLabelText(/switch to standard model/i));
+    fireEvent.click(screen.getByLabelText(/switch to balanced model/i));
     expect(mockSetCopilotLlmModel).toHaveBeenCalledWith("standard");
   });
 
@@ -233,6 +249,30 @@ describe("ChatInput model toggle", () => {
     expect(
       screen.queryByLabelText(/switch to (advanced|standard) model/i),
     ).toBeNull();
+  });
+
+  it("shows model toggle when hasSession is true and not streaming", () => {
+    // Model is per-message — can be changed between turns even in an existing session.
+    mockFlagValue = true;
+    render(<ChatInput onSend={mockOnSend} hasSession />);
+    expect(
+      screen.queryByLabelText(/switch to (advanced|standard) model/i),
+    ).not.toBeNull();
+  });
+
+  it("hides dry-run toggle when hasSession is true", () => {
+    // DryRun button is only for new chats — once a session exists its dry_run
+    // flag is immutable and shown via the CopilotPage banner, not this button.
+    mockFlagValue = true;
+    render(<ChatInput onSend={mockOnSend} hasSession />);
+    expect(screen.queryByLabelText(/test mode/i)).toBeNull();
+    expect(screen.queryByLabelText(/enable test mode/i)).toBeNull();
+  });
+
+  it("shows dry-run toggle when no session", () => {
+    mockFlagValue = true;
+    render(<ChatInput onSend={mockOnSend} />);
+    expect(screen.getByLabelText(/test mode|enable test mode/i)).toBeTruthy();
   });
 
   it("shows a toast when switching to advanced", async () => {
@@ -253,10 +293,10 @@ describe("ChatInput model toggle", () => {
     mockFlagValue = true;
     mockCopilotLlmModel = "advanced";
     render(<ChatInput onSend={mockOnSend} />);
-    fireEvent.click(screen.getByLabelText(/switch to standard model/i));
+    fireEvent.click(screen.getByLabelText(/switch to balanced model/i));
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: expect.stringMatching(/switched to standard model/i),
+        title: expect.stringMatching(/switched to balanced model/i),
       }),
     );
   });
