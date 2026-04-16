@@ -670,6 +670,61 @@ def test_update_subscription_tier_paid_to_paid_modifies_subscription(
     checkout_mock.assert_not_awaited()
 
 
+def test_update_subscription_tier_admin_granted_paid_to_paid_updates_db_directly(
+    client: fastapi.testclient.TestClient,
+    mocker: pytest_mock.MockFixture,
+) -> None:
+    """Admin-granted paid tier users are NOT sent to Stripe checkout for paid→paid changes.
+
+    When modify_stripe_subscription_for_tier returns False (no Stripe subscription
+    found — admin-granted tier), the endpoint must update the DB tier directly and
+    return 200 with url="", rather than falling through to Checkout Session creation.
+    """
+    mock_user = Mock()
+    mock_user.subscription_tier = SubscriptionTier.PRO
+
+    mocker.patch(
+        "backend.api.features.v1.get_user_by_id",
+        new_callable=AsyncMock,
+        return_value=mock_user,
+    )
+    mocker.patch(
+        "backend.api.features.v1.is_feature_enabled",
+        new_callable=AsyncMock,
+        return_value=True,
+    )
+    # Return False = no Stripe subscription (admin-granted tier)
+    modify_mock = mocker.patch(
+        "backend.api.features.v1.modify_stripe_subscription_for_tier",
+        new_callable=AsyncMock,
+        return_value=False,
+    )
+    set_tier_mock = mocker.patch(
+        "backend.api.features.v1.set_subscription_tier",
+        new_callable=AsyncMock,
+    )
+    checkout_mock = mocker.patch(
+        "backend.api.features.v1.create_subscription_checkout",
+        new_callable=AsyncMock,
+    )
+
+    response = client.post(
+        "/credits/subscription",
+        json={
+            "tier": "BUSINESS",
+            "success_url": f"{TEST_FRONTEND_ORIGIN}/success",
+            "cancel_url": f"{TEST_FRONTEND_ORIGIN}/cancel",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["url"] == ""
+    modify_mock.assert_awaited_once_with(TEST_USER_ID, SubscriptionTier.BUSINESS)
+    # DB tier updated directly — no Stripe Checkout Session created
+    set_tier_mock.assert_awaited_once_with(TEST_USER_ID, SubscriptionTier.BUSINESS)
+    checkout_mock.assert_not_awaited()
+
+
 def test_update_subscription_tier_paid_to_paid_stripe_error_returns_502(
     client: fastapi.testclient.TestClient,
     mocker: pytest_mock.MockFixture,

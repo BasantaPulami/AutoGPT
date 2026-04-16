@@ -902,6 +902,13 @@ async def update_subscription_tier(
             modified = await modify_stripe_subscription_for_tier(user_id, tier)
             if modified:
                 return SubscriptionCheckoutResponse(url="")
+            # modify_stripe_subscription_for_tier returns False when no active
+            # Stripe subscription exists — i.e. the user has an admin-granted
+            # paid tier with no Stripe record.  In that case, update the DB
+            # tier directly (same as the FREE-downgrade path for admin-granted
+            # users) rather than sending them through a new Checkout Session.
+            await set_subscription_tier(user_id, tier)
+            return SubscriptionCheckoutResponse(url="")
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
         except stripe.StripeError as e:
