@@ -3616,12 +3616,38 @@ async def stream_chat_completion_sdk(
                     sdk_cwd, session_id, log_prefix
                 )
                 if _cli_content:
+                    # Compute JSONL coverage watermark.
+                    # Using len(session.messages) (DB count) causes an
+                    # "inflated watermark" bug: when prior turns fail to
+                    # upload, the GCS JSONL is stale but its meta.json
+                    # watermark matches the DB count, so the next turn's
+                    # gap-fill check (transcript_msg_count < msg_count-1)
+                    # never triggers and the model silently loses context.
+                    # Fix: watermark = previous coverage + 2 (current
+                    # user+asst pair).  This accurately reflects what is
+                    # actually in the JSONL so any stale gap is detected.
+                    _final_use_resume = (
+                        state.use_resume if state is not None else use_resume
+                    )
+                    _final_tmsg_count = (
+                        state.transcript_msg_count
+                        if state is not None
+                        else transcript_msg_count
+                    )
+                    if _final_use_resume and _final_tmsg_count > 0:
+                        _jsonl_covered = _final_tmsg_count + 2
+                    else:
+                        # Fresh session, restore failed, or retry that
+                        # reset transcript_msg_count to 0.  Use 2 so the
+                        # next turn triggers gap-fill when prior messages
+                        # exist in DB but not in the uploaded JSONL.
+                        _jsonl_covered = 2
                     await asyncio.shield(
                         upload_transcript(
                             user_id=user_id,
                             session_id=session_id,
                             content=_cli_content,
-                            message_count=len(session.messages),
+                            message_count=_jsonl_covered,
                             mode="sdk",
                             log_prefix=log_prefix,
                         )
