@@ -6,29 +6,41 @@ import type { CopilotMode } from "../../../store";
 
 interface Props {
   mode: CopilotMode;
+  readOnly?: boolean;
   onToggle: () => void;
 }
 
-export function ModeToggleButton({ mode, onToggle }: Props) {
+export function ModeToggleButton({ mode, readOnly = false, onToggle }: Props) {
   const isExtended = mode === "extended_thinking";
   return (
     <button
       type="button"
       aria-pressed={isExtended}
-      onClick={onToggle}
+      onClick={readOnly ? undefined : onToggle}
       className={cn(
         "inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
         isExtended
           ? "bg-purple-100 text-purple-900 hover:bg-purple-200"
           : "bg-amber-100 text-amber-900 hover:bg-amber-200",
+        readOnly && "cursor-default opacity-70",
       )}
       aria-label={
-        isExtended ? "Switch to Fast mode" : "Switch to Extended Thinking mode"
+        readOnly
+          ? isExtended
+            ? "Extended Thinking mode active for this session"
+            : "Fast mode active for this session"
+          : isExtended
+            ? "Switch to Fast mode"
+            : "Switch to Extended Thinking mode"
       }
       title={
-        isExtended
-          ? "Extended Thinking mode — deeper reasoning (click to switch to Fast mode)"
-          : "Fast mode — quicker responses (click to switch to Extended Thinking)"
+        readOnly
+          ? isExtended
+            ? "Extended Thinking mode active for this session"
+            : "Fast mode active for this session"
+          : isExtended
+            ? "Extended Thinking mode — deeper reasoning (click to switch to Fast mode)"
+            : "Fast mode — quicker responses (click to switch to Extended Thinking)"
       }
     >
       {isExtended ? (
