@@ -158,6 +158,13 @@ export function useCopilotStream({
       const capturedEpoch = sessionEpochRef.current;
       reconnectTimeoutTimerRef.current = setTimeout(() => {
         if (sessionEpochRef.current !== capturedEpoch) return;
+        // Cancel the pending reconnect timer so it can't fire resumeStream()
+        // after the UI has been forced to idle — otherwise we'd end up in an
+        // inconsistent state (reconnectExhausted=true + a fresh stream).
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = undefined;
+        isReconnectScheduledRef.current = false;
+        setIsReconnectScheduled(false);
         setReconnectExhausted(true);
         reconnectStartedAtRef.current = null;
         toast({
