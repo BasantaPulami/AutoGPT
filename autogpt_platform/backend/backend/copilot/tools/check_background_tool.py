@@ -80,7 +80,9 @@ class CheckBackgroundToolTool(BaseTool):
                     "type": "integer",
                     "description": (
                         "Max seconds to wait for completion. 0 = just check "
-                        f"status. Capped at {_MAX_BACKGROUND_WAIT_SECONDS}."
+                        "status. Values above "
+                        f"{_MAX_BACKGROUND_WAIT_SECONDS} are clamped to that "
+                        "maximum — call again to keep waiting."
                     ),
                     "default": 60,
                 },

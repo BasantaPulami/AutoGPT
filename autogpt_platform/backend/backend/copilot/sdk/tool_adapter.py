@@ -320,10 +320,8 @@ def _tool_background_result(
         "timeout_seconds": timeout,
         "background_id": background_id,
         "message": (
-            f"'{tool_name}' is still running after {timeout}s and was moved "
-            "to the background (not cancelled). Use check_background_tool "
-            f"with background_id='{background_id}' to wait longer, poll "
-            "status, or cancel."
+            f"Still running after {timeout}s — use check_background_tool "
+            "to wait longer or cancel."
         ),
     }
     return {

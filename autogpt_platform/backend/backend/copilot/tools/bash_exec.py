@@ -42,6 +42,11 @@ class BashExecTool(BaseTool):
     def name(self) -> str:
         return "bash_exec"
 
+    # BaseTool.timeout_seconds=600 is inherited but never fires in practice:
+    # the `timeout` parameter on each call is capped at 120s by this tool's
+    # own subprocess timeout, so the MCP handler's budget is only a safety
+    # net for pathological hangs around sandbox setup/teardown.
+
     @property
     def description(self) -> str:
         return (

@@ -107,6 +107,7 @@ from ..transcript import (
 )
 from ..transcript_builder import TranscriptBuilder
 from .compaction import CompactionTracker, filter_compaction_messages
+from .background_registry import cancel_all_background_tasks
 from .env import build_sdk_env  # noqa: F401 — re-export for backward compat
 from .response_adapter import SDKResponseAdapter
 from .security_hooks import create_security_hooks
@@ -2334,6 +2335,10 @@ async def _run_stream_attempt(
                 break
     finally:
         await _safe_close_sdk_client(sdk_client, ctx.log_prefix)
+        # Cancel any tool calls still parked in the background registry so
+        # orphaned long-running work (sub-AutoPilot, graph execution, etc.)
+        # doesn't keep running after the stream ends.
+        cancel_all_background_tasks(reason=f"stream ended ({ctx.log_prefix})")
 
     # --- Post-stream processing (only on success) ---
     if state.adapter.has_unresolved_tool_calls:
