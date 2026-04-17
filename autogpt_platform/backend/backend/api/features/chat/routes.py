@@ -861,11 +861,8 @@ async def cancel_auto_approve_task(
 
     from backend.copilot.tools.decompose_goal import cancel_auto_approve
 
-    cancelled = await cancel_auto_approve(session_id)
-    return CancelSessionResponse(
-        cancelled=cancelled,
-        reason=None if cancelled else "no_pending_auto_approve",
-    )
+    await cancel_auto_approve(session_id)
+    return CancelSessionResponse(cancelled=True)
 
 
 @router.post(

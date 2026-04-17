@@ -170,7 +170,7 @@ export function DecomposeGoalTool({
     setEditableSteps((prev) => {
       const next = [...prev];
       next.splice(afterIndex + 1, 0, {
-        step_id: `step_new_${Date.now()}`,
+        step_id: `step_new_${crypto.randomUUID()}`,
         description: "",
         action: "add_block",
         status: "pending",
@@ -186,14 +186,39 @@ export function DecomposeGoalTool({
     }
   }, [showActions, isEditing]);
 
-  // Tick down only while the timer is active.
+  // Re-derive remaining seconds from ``created_at`` on every tick (and on
+  // tab visibility change) instead of decrementing a local counter.
+  // ``setInterval`` is aggressively throttled in backgrounded tabs, so a
+  // naive ``s - 1`` drifts behind wall-clock time — the user could reopen
+  // the tab well past the deadline and still see e.g. "Starting in 45".
+  // Re-deriving keeps the UI in sync with the server-side timer.
+  const createdAt =
+    output && isDecompositionOutput(output) ? output.created_at : undefined;
   useEffect(() => {
     if (!showActions || !timerActive) return;
-    const interval = setInterval(() => {
-      setSecondsLeft((s) => Math.max(0, s - 1));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [showActions, timerActive, part.toolCallId]);
+    const deadlineMs = createdAt
+      ? new Date(createdAt).getTime() + countdownSeconds * 1000
+      : null;
+    function recompute() {
+      if (deadlineMs !== null && !Number.isNaN(deadlineMs)) {
+        const remaining = Math.max(
+          0,
+          Math.round((deadlineMs - Date.now()) / 1000),
+        );
+        setSecondsLeft(Math.min(countdownSeconds, remaining));
+      } else {
+        // Legacy session with no ``created_at`` — fall back to naive decrement.
+        setSecondsLeft((s) => Math.max(0, s - 1));
+      }
+    }
+    recompute();
+    const interval = setInterval(recompute, 1000);
+    document.addEventListener("visibilitychange", recompute);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", recompute);
+    };
+  }, [showActions, timerActive, part.toolCallId, createdAt, countdownSeconds]);
 
   // Auto-approve when countdown reaches 0. The client fires at 60s; the
   // server fires 5s later as a fallback for the "user closed the tab" case.
