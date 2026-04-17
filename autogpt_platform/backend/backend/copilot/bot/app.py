@@ -104,12 +104,12 @@ class CoPilotChatBridgeClient(AppServiceClient):
 def _build_adapters(api: PlatformAPI) -> list[PlatformAdapter]:
     """Instantiate adapters based on which platform tokens are configured."""
     adapters: list[PlatformAdapter] = []
-    if discord_config.BOT_TOKEN:
+    if discord_config.get_bot_token():
         adapters.append(DiscordAdapter(api))
         logger.info("Discord adapter enabled")
     # Future:
-    # if telegram_config.BOT_TOKEN:
+    # if telegram_config.get_bot_token():
     #     adapters.append(TelegramAdapter(api))
-    # if slack_config.BOT_TOKEN:
+    # if slack_config.get_bot_token():
     #     adapters.append(SlackAdapter(api))
     return adapters

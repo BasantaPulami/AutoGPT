@@ -10,7 +10,6 @@ import logging
 from dataclasses import dataclass, field
 
 from backend.data.redis_client import get_redis_async
-
 from backend.util.exceptions import (
     DuplicateChatMessageError,
     LinkAlreadyExistsError,
@@ -159,10 +158,12 @@ class MessageHandler:
             )
             return
         except Exception:
-            logger.warning("Backend unreachable during streaming")
+            logger.exception(
+                "Unexpected error during streaming for target %s", target_id
+            )
             await adapter.send_message(
                 target_id,
-                "I can't reach the AutoGPT backend right now. Try again in a moment.",
+                "Something went wrong. Try again in a moment.",
             )
             return
         finally:
@@ -212,10 +213,10 @@ class MessageHandler:
             )
             return False
         except Exception:
-            logger.warning("Backend unreachable while checking link status")
+            logger.exception("Unexpected error while checking link status")
             await adapter.send_message(
                 ctx.channel_id,
-                "I can't reach the AutoGPT backend right now. Try again in a moment.",
+                "Something went wrong. Try again in a moment.",
             )
             return False
         return True

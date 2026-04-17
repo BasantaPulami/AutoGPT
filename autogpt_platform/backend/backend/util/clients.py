@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from openai import AsyncOpenAI
     from supabase import AClient, Client
 
+    from backend.copilot.bot.app import CoPilotChatBridgeClient
     from backend.data.db_manager import (
         DatabaseManagerAsyncClient,
         DatabaseManagerClient,
@@ -24,7 +25,6 @@ if TYPE_CHECKING:
         RedisExecutionEventBus,
     )
     from backend.data.rabbitmq import AsyncRabbitMQ, SyncRabbitMQ
-    from backend.copilot.bot.app import CoPilotChatBridgeClient
     from backend.executor.scheduler import SchedulerClient
     from backend.integrations.credentials_store import IntegrationCredentialsStore
     from backend.notifications.notifications import NotificationManagerClient

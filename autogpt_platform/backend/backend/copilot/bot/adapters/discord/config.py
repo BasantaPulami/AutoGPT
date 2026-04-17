@@ -1,8 +1,11 @@
 """Discord-specific configuration."""
 
-import os
+from backend.util.settings import Settings
 
-BOT_TOKEN: str = os.getenv("AUTOPILOT_BOT_DISCORD_TOKEN", "")
+
+def get_bot_token() -> str:
+    return Settings().secrets.autopilot_bot_discord_token
+
 
 # Discord message content limit (hard platform cap)
 MAX_MESSAGE_LENGTH = 2000

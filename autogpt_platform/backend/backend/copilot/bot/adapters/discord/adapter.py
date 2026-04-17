@@ -47,21 +47,37 @@ class DiscordAdapter(PlatformAdapter):
         self._on_message_callback = callback
 
     async def start(self) -> None:
-        await self._client.start(config.BOT_TOKEN)
+        await self._client.start(config.get_bot_token())
 
     async def stop(self) -> None:
         if not self._client.is_closed():
             await self._client.close()
 
-    async def send_message(self, channel_id: str, text: str) -> None:
+    async def _resolve_channel(self, channel_id: str):
+        """Return the channel for ``channel_id``, falling back to a REST fetch.
+
+        ``Client.get_channel`` only reads the in-memory cache, so it misses
+        threads the bot hasn't seen since its last restart. Fall back to
+        ``fetch_channel`` (REST) so long-lived threads keep working.
+        """
         channel = self._client.get_channel(int(channel_id))
+        if channel is not None:
+            return channel
+        try:
+            return await self._client.fetch_channel(int(channel_id))
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            logger.warning("Channel %s not found or inaccessible", channel_id)
+            return None
+
+    async def send_message(self, channel_id: str, text: str) -> None:
+        channel = await self._resolve_channel(channel_id)
         if channel and isinstance(channel, discord.abc.Messageable):
             await channel.send(text)
 
     async def send_link(
         self, channel_id: str, text: str, link_label: str, link_url: str
     ) -> None:
-        channel = self._client.get_channel(int(channel_id))
+        channel = await self._resolve_channel(channel_id)
         if channel is None or not isinstance(channel, discord.abc.Messageable):
             return
         view = discord.ui.View()
@@ -77,7 +93,7 @@ class DiscordAdapter(PlatformAdapter):
     async def send_reply(
         self, channel_id: str, text: str, reply_to_message_id: str
     ) -> None:
-        channel = self._client.get_channel(int(channel_id))
+        channel = await self._resolve_channel(channel_id)
         if not channel or not isinstance(channel, discord.abc.Messageable):
             return
         try:
@@ -92,7 +108,7 @@ class DiscordAdapter(PlatformAdapter):
         await self.send_message(channel_id, text)
 
     async def start_typing(self, channel_id: str) -> None:
-        channel = self._client.get_channel(int(channel_id))
+        channel = await self._resolve_channel(channel_id)
         if channel and isinstance(channel, discord.abc.Messageable):
             await channel.typing()
 
@@ -102,7 +118,7 @@ class DiscordAdapter(PlatformAdapter):
     async def create_thread(
         self, channel_id: str, message_id: str, name: str
     ) -> Optional[str]:
-        channel = self._client.get_channel(int(channel_id))
+        channel = await self._resolve_channel(channel_id)
         if channel is None or not isinstance(channel, discord.TextChannel):
             logger.warning("Cannot create thread in non-text channel %s", channel_id)
             return None

@@ -658,6 +658,11 @@ class Secrets(UpdateTrackingModel["Secrets"], BaseSettings):
     did_api_key: str = Field(default="", description="D-ID API Key")
     revid_api_key: str = Field(default="", description="revid.ai API key")
     discord_bot_token: str = Field(default="", description="Discord bot token")
+    autopilot_bot_discord_token: str = Field(
+        default="",
+        description="Discord bot token for the CoPilot chat bridge. When set, "
+        "the bridge enables its Discord adapter.",
+    )
 
     smtp_server: str = Field(default="", description="SMTP server IP")
     smtp_port: str = Field(default="", description="SMTP server port")

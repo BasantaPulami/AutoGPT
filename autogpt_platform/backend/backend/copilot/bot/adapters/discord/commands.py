@@ -10,9 +10,9 @@ import logging
 import discord
 from discord import app_commands
 
-from backend.copilot.bot.config import AUTOGPT_FRONTEND_URL
 from backend.copilot.bot.platform_api import PlatformAPI
 from backend.util.exceptions import LinkAlreadyExistsError
+from backend.util.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ async def _handle_help(interaction: discord.Interaction) -> None:
 
 
 async def _handle_unlink(interaction: discord.Interaction) -> None:
-    settings_url = f"{AUTOGPT_FRONTEND_URL}/profile/settings"
+    settings_url = f"{Settings().config.frontend_base_url}/profile/settings"
     view = discord.ui.View()
     view.add_item(
         discord.ui.Button(

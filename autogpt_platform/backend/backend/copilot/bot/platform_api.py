@@ -5,11 +5,7 @@ from dataclasses import dataclass
 from typing import AsyncGenerator, Callable, Optional
 
 from backend.copilot import stream_registry
-from backend.copilot.response_model import (
-    StreamError,
-    StreamFinish,
-    StreamTextDelta,
-)
+from backend.copilot.response_model import StreamError, StreamFinish, StreamTextDelta
 from backend.platform_linking.models import (
     BotChatRequest,
     CreateLinkTokenRequest,
