@@ -6,9 +6,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/atoms/Tooltip/BaseTooltip";
-import { beautifyString, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { CustomNodeData } from "../CustomNode";
+import { formatNodeDisplayTitle, getNodeDisplayTitle } from "../helpers";
 import { NodeBadges } from "./NodeBadges";
 import { NodeContextMenu } from "./NodeContextMenu";
 import { NodeCost } from "./NodeCost";
@@ -21,27 +22,17 @@ type Props = {
 export const NodeHeader = ({ data, nodeId }: Props) => {
   const updateNodeData = useNodeStore((state) => state.updateNodeData);
 
-  const agentName = data.hardcodedValues?.agent_name as string | undefined;
-  const graphVersion = data.hardcodedValues?.graph_version as number | undefined;
-  const agentDisplayName =
-    agentName && graphVersion != null
-      ? `${agentName} v${graphVersion}`
-      : agentName || undefined;
-
-  const isAgentOrCustomTitle = !!(
-    data.metadata?.customized_name || agentDisplayName
-  );
-  const title =
-    (data.metadata?.customized_name as string) ||
-    agentDisplayName ||
-    data.title;
+  const title = getNodeDisplayTitle(data);
+  const displayTitle = formatNodeDisplayTitle(data);
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState(title);
 
   useEffect(() => {
-    setEditedTitle(title);
-  }, [title]);
+    if (!isEditingTitle) {
+      setEditedTitle(title);
+    }
+  }, [title, isEditingTitle]);
 
   const handleTitleEdit = () => {
     updateNodeData(nodeId, {
@@ -89,22 +80,12 @@ export const NodeHeader = ({ data, nodeId }: Props) => {
                         variant="large-semibold"
                         className="line-clamp-1 hover:cursor-text"
                       >
-                        {isAgentOrCustomTitle
-                          ? title
-                          : beautifyString(title)
-                              .replace(/ Block$/, "")
-                              .trim()}
+                        {displayTitle}
                       </Text>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>
-                      {isAgentOrCustomTitle
-                        ? title
-                        : beautifyString(title)
-                            .replace(/ Block$/, "")
-                            .trim()}
-                    </p>
+                    <p>{displayTitle}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

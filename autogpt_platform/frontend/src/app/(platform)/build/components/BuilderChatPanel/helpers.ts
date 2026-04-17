@@ -144,18 +144,26 @@ export function getActionKey(action: GraphAction): string {
 
 /**
  * Resolves the display name for a node: prefers the user-customized name,
- * falls back to the block title, then to the raw ID.
+ * then agent name from hardcodedValues, then block title, then fallback ID.
  * Shared between `serializeGraphForChat` and `ActionItem` to avoid duplication.
  */
 export function getNodeDisplayName(
   node: CustomNode | undefined,
   fallback: string,
 ): string {
-  return (
-    (node?.data.metadata?.customized_name as string | undefined) ||
-    node?.data.title ||
-    fallback
-  );
+  if (!node) return fallback;
+  const customName = node.data.metadata?.customized_name as string | undefined;
+  if (customName) return customName;
+
+  const agentName = node.data.hardcodedValues?.agent_name as string | undefined;
+  if (agentName) {
+    const graphVersion = node.data.hardcodedValues?.graph_version as
+      | number
+      | undefined;
+    return graphVersion != null ? `${agentName} v${graphVersion}` : agentName;
+  }
+
+  return node.data.title || fallback;
 }
 
 /**
