@@ -11,7 +11,6 @@ export enum Flag {
   ARTIFACTS = "artifacts",
   CHAT_MODE_OPTION = "chat-mode-option",
   BUILDER_CHAT_PANEL = "builder-chat-panel",
-  NEW_SIDEBAR = "new-sidebar",
 }
 
 const isPwMockEnabled = process.env.NEXT_PUBLIC_PW_TEST === "true";
@@ -23,7 +22,6 @@ const defaultFlags = {
   [Flag.ARTIFACTS]: false,
   [Flag.CHAT_MODE_OPTION]: false,
   [Flag.BUILDER_CHAT_PANEL]: false,
-  [Flag.NEW_SIDEBAR]: false,
 };
 
 type FlagValues = typeof defaultFlags;

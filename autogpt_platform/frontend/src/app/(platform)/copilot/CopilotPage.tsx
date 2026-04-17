@@ -10,8 +10,6 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatContainer } from "./components/ChatContainer/ChatContainer";
 import { DeleteChatDialog } from "./components/DeleteChatDialog/DeleteChatDialog";
-import { MobileDrawer } from "./components/MobileDrawer/MobileDrawer";
-import { MobileHeader } from "./components/MobileHeader/MobileHeader";
 import { NotificationBanner } from "./components/NotificationBanner/NotificationBanner";
 import { NotificationDialog } from "./components/NotificationDialog/NotificationDialog";
 import { RateLimitResetDialog } from "./components/RateLimitResetDialog/RateLimitResetDialog";
@@ -90,16 +88,8 @@ export function CopilotPage() {
     hasMoreMessages,
     isLoadingMore,
     loadMore,
-    // Mobile drawer
+    // Mobile
     isMobile,
-    isDrawerOpen,
-    sessions,
-    isLoadingSessions,
-    handleOpenDrawer,
-    handleCloseDrawer,
-    handleDrawerOpenChange,
-    handleSelectSession,
-    handleNewChat,
     // Delete functionality
     sessionToDelete,
     isDeleting,
@@ -129,7 +119,6 @@ export function CopilotPage() {
 
   const isBillingEnabled = useGetFlag(Flag.ENABLE_PLATFORM_PAYMENT);
   const isArtifactsEnabled = useGetFlag(Flag.ARTIFACTS);
-  const isNewSidebar = useGetFlag(Flag.NEW_SIDEBAR);
   const { credits, fetchCredits } = useCredits({ fetchInitialCredits: true });
   const hasInsufficientCredits =
     credits !== null && resetCost != null && credits < resetCost;
@@ -166,9 +155,6 @@ export function CopilotPage() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {isMobile && !isNewSidebar && (
-        <MobileHeader onOpenDrawer={handleOpenDrawer} />
-      )}
       <NotificationBanner />
       {isDryRun && (
         <div className="flex items-center justify-center gap-1.5 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800">
@@ -218,18 +204,6 @@ export function CopilotPage() {
           isDeleting={isDeleting}
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
-        />
-      )}
-      {isMobile && !isNewSidebar && (
-        <MobileDrawer
-          isOpen={isDrawerOpen}
-          sessions={sessions}
-          currentSessionId={sessionId}
-          isLoading={isLoadingSessions}
-          onSelectSession={handleSelectSession}
-          onNewChat={handleNewChat}
-          onClose={handleCloseDrawer}
-          onOpenChange={handleDrawerOpenChange}
         />
       )}
       <NotificationDialog />
