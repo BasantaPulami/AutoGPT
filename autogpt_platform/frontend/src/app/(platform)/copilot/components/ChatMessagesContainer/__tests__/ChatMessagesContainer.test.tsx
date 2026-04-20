@@ -303,12 +303,37 @@ describe("ChatMessagesContainer — retrieval placeholder", () => {
     expect(
       screen.getByText(/Failed to retrieve latest conversation/i),
     ).toBeDefined();
+    const reloadBtn = screen.getByRole("button", { name: /reload the page/i });
+    expect(reloadBtn).toBeDefined();
+  });
+
+  it("triggers a full-page reload when the failure button is clicked", () => {
+    const reloadSpy = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...original, reload: reloadSpy },
+    });
+    try {
+      render(
+        <ChatMessagesContainer
+          {...baseProps}
+          status="submitted"
+          streamRetrievalFailed
+        />,
+      );
+      screen.getByRole("button", { name: /reload the page/i }).click();
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: original,
+      });
+    }
   });
 
   it("falls back to the Thinking indicator when retrieval flags are off", () => {
-    render(
-      <ChatMessagesContainer {...baseProps} status="submitted" />,
-    );
+    render(<ChatMessagesContainer {...baseProps} status="submitted" />);
     // Retrieval-specific copy must NOT leak into a normal thinking state.
     expect(screen.queryByText(/Retrieving your conversation/i)).toBeNull();
     expect(
