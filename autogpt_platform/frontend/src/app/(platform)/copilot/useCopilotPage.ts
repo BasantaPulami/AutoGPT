@@ -1,6 +1,11 @@
+import { toast } from "@/components/molecules/Toast/use-toast";
 import { useSupabase } from "@/lib/supabase/hooks/useSupabase";
 import { Flag, useGetFlag } from "@/services/feature-flags/use-get-flag";
+import { useMemo, useRef } from "react";
 import { concatWithAssistantMerge } from "./helpers/convertChatSessionToUiMessages";
+import { queueFollowUpMessage } from "./helpers/queueFollowUpMessage";
+import { stripReplayPrefix } from "./helpers/stripReplayPrefix";
+import { useCopilotPendingChips } from "./useCopilotPendingChips";
 import { useCopilotUIStore } from "./store";
 import { useChatSession } from "./useChatSession";
 import { useCopilotNotifications } from "./useCopilotNotifications";
@@ -24,8 +29,6 @@ export function useCopilotPage() {
     hasActiveStream,
     hasMoreMessages,
     oldestSequence,
-    newestSequence,
-    forwardPaginated,
     isLoadingSession,
     isSessionError,
     createSession,
@@ -36,6 +39,7 @@ export function useCopilotPage() {
 
   const {
     messages: currentMessages,
+    setMessages,
     sendMessage,
     stop,
     status,
@@ -54,38 +58,101 @@ export function useCopilotPage() {
     copilotModel: isModeToggleEnabled ? copilotLlmModel : undefined,
   });
 
-  const { pagedMessages, hasMore, isLoadingMore, loadMore, resetPaged } =
+  const { pagedMessages, hasMore, isLoadingMore, loadMore } =
     useLoadMoreMessages({
       sessionId,
       initialOldestSequence: oldestSequence,
-      initialNewestSequence: newestSequence,
       initialHasMore: hasMoreMessages,
-      forwardPaginated,
       initialPageRawMessages: rawSessionMessages,
     });
 
+  // Ref that mirrors whether a stream turn is currently in-flight.
+  // Updated synchronously on every render so it always reflects the latest
+  // status — unlike reading `status` inside onSend (which captures the
+  // closure's render-cycle value and can be stale for a frame).
+  // Setting it to true *before* calling sendMessage prevents rapid
+  // double-presses from both routing to /stream before React can re-render
+  // with status="submitted".
+  const isInflightRef = useRef(false);
+  isInflightRef.current = status === "streaming" || status === "submitted";
+
   // Combine paginated messages with current page messages, merging consecutive
   // assistant UIMessages at the page boundary so reasoning + response parts
-  // stay in a single bubble.
-  // Forward pagination (completed sessions): current page is the beginning,
-  // paged messages are newer pages appended after.
-  // Backward pagination (active sessions): paged messages are older history
-  // prepended before the current page.
-  const messages = forwardPaginated
-    ? concatWithAssistantMerge(currentMessages, pagedMessages)
-    : concatWithAssistantMerge(pagedMessages, currentMessages);
+  // stay in a single bubble. Paged messages are older history prepended before
+  // the current page.
+  const rawMessages = concatWithAssistantMerge(pagedMessages, currentMessages);
+
+  // Drop / trim assistant messages whose leading text is a replay of an
+  // earlier assistant (Claude Agent SDK's `--resume` behaviour). See
+  // helpers/stripReplayPrefix.ts for the three cases.
+  const messages = useMemo(() => stripReplayPrefix(rawMessages), [rawMessages]);
+
+  // Chip state machine (peek sync + auto-continue promotion + mid-turn poll)
+  // lives in a dedicated hook so this component is just glue.
+  const { queuedMessages, appendChip } = useCopilotPendingChips({
+    sessionId,
+    status,
+    messages,
+    setMessages,
+  });
 
   useCopilotNotifications(sessionId);
 
-  const { onSend, isUploadingFiles, pendingFilePartsRef } = useSendMessage({
+  const {
+    onSend: sendNewMessage,
+    isUploadingFiles,
+    pendingFilePartsRef,
+  } = useSendMessage({
     sessionId,
     sendMessage,
     createSession,
-    forwardPaginated,
-    pagedMessagesLength: pagedMessages.length,
-    resetPaged,
     isUserStoppingRef,
   });
+
+  // Wrap sendNewMessage with queue-in-flight routing: if a session is active
+  // and a turn is already running, POST the follow-up text to `/stream` so
+  // the backend buffers it; otherwise fall through to the normal send path.
+  async function onSend(message: string, files?: File[]) {
+    const trimmed = message.trim();
+    if (!trimmed && (!files || files.length === 0)) return;
+
+    if (sessionId && isInflightRef.current) {
+      if (files && files.length > 0) {
+        toast({
+          title: "Please wait to attach files",
+          description:
+            "File attachments can't be queued until the current response finishes.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        const result = await queueFollowUpMessage(sessionId, trimmed);
+        if (result.kind === "queued") {
+          appendChip(trimmed);
+        }
+        // kind === "raced_started_turn": the server already kicked off a new
+        // turn; useHydrateOnStreamEnd will surface its output when complete.
+      } catch (err) {
+        toast({
+          title: "Could not queue message",
+          description: "Please wait for the current response to finish.",
+          variant: "destructive",
+        });
+        throw err;
+      }
+      return;
+    }
+
+    // Mark in-flight synchronously before dispatching so a rapid second
+    // press sees isInflightRef.current=true and routes to the queue path
+    // instead of triggering a duplicate /stream POST.
+    if (sessionId) {
+      isInflightRef.current = true;
+    }
+    await sendNewMessage(message, files);
+  }
 
   useWorkflowImportAutoSubmit({ onSend, pendingFilePartsRef });
 
@@ -107,10 +174,13 @@ export function useCopilotPage() {
     isLoggedIn,
     createSession,
     onSend,
+    // onEnqueue delegates to onSend, which internally routes to the queue
+    // endpoint when isInflightRef.current is true.
+    onEnqueue: onSend,
+    queuedMessages,
     hasMoreMessages: hasMore,
     isLoadingMore,
     loadMore,
-    forwardPaginated,
     historicalDurations,
     rateLimitMessage,
     dismissRateLimit,

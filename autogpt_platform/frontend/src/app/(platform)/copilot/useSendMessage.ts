@@ -19,9 +19,6 @@ interface Args {
   sessionId: string | null;
   sendMessage: SendMessageFn;
   createSession: () => Promise<string | undefined>;
-  forwardPaginated: boolean;
-  pagedMessagesLength: number;
-  resetPaged: () => void;
   isUserStoppingRef: React.MutableRefObject<boolean>;
 }
 
@@ -39,9 +36,6 @@ export function useSendMessage({
   sessionId,
   sendMessage,
   createSession,
-  forwardPaginated,
-  pagedMessagesLength,
-  resetPaged,
   isUserStoppingRef,
 }: Args) {
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
@@ -174,12 +168,6 @@ export function useSendMessage({
     isUserStoppingRef.current = false;
 
     if (sessionId) {
-      // Continuing a completed session that had forward-paginated history
-      // loaded: paged messages would land after the new streaming turn.
-      // Reset so ordering is correct; user can reload history afterward.
-      if (forwardPaginated && pagedMessagesLength > 0) {
-        resetPaged();
-      }
       const prebuiltParts = pendingFilePartsRef.current;
       pendingFilePartsRef.current = [];
       await dispatchToSession(sessionId, trimmed, files ?? [], prebuiltParts);

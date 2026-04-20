@@ -22,6 +22,7 @@ import {
   disconnectSessionStream,
 } from "./helpers";
 import type { CopilotLlmModel, CopilotMode } from "./store";
+import { useHydrateOnStreamEnd } from "./useHydrateOnStreamEnd";
 
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_ATTEMPTS = 3;
@@ -513,24 +514,30 @@ export function useCopilotStream({
     };
   }, [refetchSession, setMessages]);
 
-  // Hydrate messages from REST API when not actively streaming.
-  // Marks hydrateCompleted in the store so the resume effect knows it's safe
-  // to proceed (or flushes any deferred resume that was waiting on hydration).
+  // After-stream hydration — force-replace AI-SDK state with the DB's view
+  // once React Query has actually refetched, then keep length-gated top-ups
+  // working for pagination. See useHydrateOnStreamEnd for the timing dance.
+  useHydrateOnStreamEnd({
+    status,
+    hydratedMessages,
+    isReconnectScheduled,
+    setMessages,
+  });
+
+  // Mark hydrateCompleted in the store whenever the hydration gate has
+  // effectively run (hydrated data is present and we're not mid-stream), and
+  // flush any `pendingResume` that was deferred while hydration was still
+  // pending on the active session. Kept as a separate effect so the
+  // useHydrateOnStreamEnd hook stays focused on the AI-SDK state sync.
   useEffect(() => {
-    if (!hydratedMessages) return;
     if (!sessionId) return;
+    if (!hydratedMessages) return;
     if (status === "streaming" || status === "submitted") return;
     if (isReconnectScheduled) return;
-    if (hydratedMessages.length > 0) {
-      setMessages((prev) => {
-        if (prev.length >= hydratedMessages.length) return prev;
-        return deduplicateMessages(hydratedMessages);
-      });
-    }
+
     useCopilotStreamStore
       .getState()
       .updateCoord(sessionId, { hydrateCompleted: true });
-    // Flush any resume that was waiting for hydration to finish.
     const { pendingResume } = useCopilotStreamStore
       .getState()
       .getCoord(sessionId);
@@ -540,7 +547,7 @@ export function useCopilotStream({
         .updateCoord(sessionId, { pendingResume: null });
       pendingResume();
     }
-  }, [hydratedMessages, setMessages, status, isReconnectScheduled, sessionId]);
+  }, [sessionId, hydratedMessages, status, isReconnectScheduled]);
 
   // Clean up state on session switch.
   // Abort the old stream's in-flight fetch and tell the backend to release
@@ -751,6 +758,7 @@ export function useCopilotStream({
 
   return {
     messages,
+    setMessages,
     sendMessage,
     stop,
     status,

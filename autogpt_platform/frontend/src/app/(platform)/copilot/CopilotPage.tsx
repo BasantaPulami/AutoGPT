@@ -40,6 +40,8 @@ export function CopilotPage() {
     isSyncing,
     createSession,
     onSend,
+    onEnqueue,
+    queuedMessages,
     isLoadingSession,
     isSessionError,
     isCreatingSession,
@@ -49,7 +51,6 @@ export function CopilotPage() {
     hasMoreMessages,
     isLoadingMore,
     loadMore,
-    forwardPaginated,
     historicalDurations,
     rateLimitMessage,
     dismissRateLimit,
@@ -103,11 +104,12 @@ export function CopilotPage() {
               onCreateSession={createSession}
               onSend={onSend}
               onStop={stop}
+              onEnqueue={onEnqueue}
+              queuedMessages={queuedMessages}
               isUploadingFiles={isUploadingFiles}
               hasMoreMessages={hasMoreMessages}
               isLoadingMore={isLoadingMore}
               onLoadMore={loadMore}
-              forwardPaginated={forwardPaginated}
               droppedFiles={droppedFiles}
               onDroppedFilesConsumed={() => setDroppedFiles([])}
               historicalDurations={historicalDurations}
