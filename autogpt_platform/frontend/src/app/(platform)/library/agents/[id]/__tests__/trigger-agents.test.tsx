@@ -296,4 +296,33 @@ describe("Library agent view — trigger agents", () => {
     // Must delete the TRIGGER agent, never the parent
     expect(deleteCalls).not.toContain(PARENT_ID);
   });
+
+  test("detail view shows 'No schedule configured' when trigger agent has no schedule", async () => {
+    const triggerAgent = getGetV2GetLibraryAgentResponseMock({
+      id: TRIGGER_ID,
+      graph_id: TRIGGER_GRAPH_ID,
+      name: "Idle Trigger",
+      description: "No schedule yet",
+      is_hidden: true,
+    });
+
+    server.use(
+      ...baseHandlers(),
+      emptyPresetsHandler,
+      emptySchedulesHandler, // returns [] for any graph
+      getGetV2ListTriggerAgentsMockHandler([triggerAgent]),
+    );
+
+    renderWithInitialParams(
+      <NewAgentLibraryView />,
+      `activeTab=triggers&activeItem=${TRIGGER_ID}`,
+    );
+
+    await screen.findByText("No schedule yet");
+    // Fallback card renders the "No schedule configured" message
+    await screen.findByText(/no schedule configured/i);
+    // And NOT the recurrence/next-run labels
+    expect(screen.queryByText("Recurrence")).toBeNull();
+    expect(screen.queryByText("Next run")).toBeNull();
+  });
 });
