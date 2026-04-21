@@ -342,9 +342,7 @@ function getWebAccordionData(
                     {truncate(href, 100)}
                   </div>
                 )}
-                {snippet && (
-                  <p className="mt-0.5 text-slate-700">{snippet}</p>
-                )}
+                {snippet && <p className="mt-0.5 text-slate-700">{snippet}</p>}
                 {pageAge && (
                   <div className="mt-0.5 text-xs text-slate-400">{pageAge}</div>
                 )}
