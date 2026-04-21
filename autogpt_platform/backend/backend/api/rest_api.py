@@ -17,6 +17,7 @@ from fastapi.routing import APIRoute
 from prisma.errors import PrismaError
 
 import backend.api.features.admin.credit_admin_routes
+import backend.api.features.admin.diagnostics_admin_routes
 import backend.api.features.admin.execution_analytics_routes
 import backend.api.features.admin.platform_cost_routes
 import backend.api.features.admin.rate_limit_admin_routes
@@ -34,6 +35,7 @@ import backend.api.features.orgs.invitation_routes
 import backend.api.features.orgs.routes as org_routes
 import backend.api.features.orgs.team_routes
 import backend.api.features.otto.routes
+import backend.api.features.platform_linking.routes
 import backend.api.features.postmark.postmark
 import backend.api.features.store.model
 import backend.api.features.store.routes
@@ -327,6 +329,11 @@ app.include_router(
     prefix="/api/credits",
 )
 app.include_router(
+    backend.api.features.admin.diagnostics_admin_routes.router,
+    tags=["v2", "admin"],
+    prefix="/api",
+)
+app.include_router(
     backend.api.features.admin.execution_analytics_routes.router,
     tags=["v2", "admin"],
     prefix="/api/executions",
@@ -402,6 +409,11 @@ app.include_router(
     transfer_routes.router,
     tags=["v2", "transfers"],
     prefix="/api/transfers",
+)
+app.include_router(
+    backend.api.features.platform_linking.routes.router,
+    tags=["platform-linking"],
+    prefix="/api/platform-linking",
 )
 
 app.mount("/external-api", external_api)
