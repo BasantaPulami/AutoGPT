@@ -194,9 +194,11 @@ class ChatConfig(BaseSettings):
         default=8192,
         ge=1024,
         le=128000,
-        description="Maximum thinking/reasoning tokens per LLM call. "
-        "Extended thinking on Opus can generate 50k+ tokens at $75/M — "
-        "capping this is the single biggest cost lever. "
+        description="Maximum thinking/reasoning tokens per LLM call. Applies "
+        "to both the Claude Agent SDK path (as ``max_thinking_tokens``) and "
+        "the baseline OpenRouter path (as ``extra_body.reasoning.max_tokens`` "
+        "on Anthropic routes). Extended thinking on Opus can generate 50k+ "
+        "tokens at $75/M — capping this is the single biggest cost lever. "
         "8192 is sufficient for most tasks; increase for complex reasoning.",
     )
     claude_agent_thinking_effort: Literal["low", "medium", "high", "max"] | None = (
@@ -224,17 +226,6 @@ class ChatConfig(BaseSettings):
         "Dynamic sections (working dir, git status, auto-memory) are excluded "
         "from the prefix. Set to False to fall back to passing the system "
         "prompt as a raw string.",
-    )
-    baseline_reasoning_max_tokens: int = Field(
-        default=8192,
-        ge=0,
-        le=128000,
-        description="Max thinking/reasoning tokens per baseline (OpenRouter) LLM "
-        "call. Sent as ``extra_body={'reasoning': {'max_tokens': N}}`` on "
-        "Anthropic routes so the frontend can render a Reasoning collapse "
-        "alongside the final text. 0 disables the feature (no reasoning "
-        "params sent). Only applies to Anthropic routes — other providers "
-        "ignore the field.",
     )
     baseline_prompt_cache_ttl: str = Field(
         default="1h",

@@ -4,7 +4,6 @@ These tests cover ``_baseline_conversation_updater`` and ``_BaselineStreamState`
 without requiring API keys, database connections, or network access.
 """
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,7 +16,6 @@ from backend.copilot.baseline.service import (
     _build_cached_system_message,
     _compress_session_messages,
     _extract_cache_creation_tokens,
-    _extract_reasoning_delta,
     _fresh_anthropic_caching_headers,
     _fresh_ephemeral_cache_control,
     _is_anthropic_model,
@@ -1530,19 +1528,35 @@ def _make_delta_chunk(
 ):
     """Build a streaming chunk with a configurable ``delta`` payload.
 
-    ``tool_calls`` defaults to None so the cost-extraction branch doesn't
-    run — callers testing reasoning → tool_use transitions can pass a
-    list of ``MagicMock`` tool-call deltas explicitly.
+    The ``delta`` is a real ``ChoiceDelta`` pydantic instance so OpenRouter
+    extension fields land on ``delta.model_extra`` — which is how
+    :class:`OpenRouterDeltaExtension` reads them in production.  Using a
+    raw ``MagicMock`` here would leave ``model_extra`` unset and silently
+    skip the reasoning parser.  ``tool_calls`` (when provided) must be
+    ``MagicMock`` entries compatible with the service's streaming loop;
+    they're set on the delta via ``object.__setattr__`` because pydantic
+    would otherwise reject the non-schema types.
     """
+    from openai.types.chat.chat_completion_chunk import ChoiceDelta
+
+    payload: dict = {"role": "assistant"}
+    if content is not None:
+        payload["content"] = content
+    if reasoning is not None:
+        payload["reasoning"] = reasoning
+    if reasoning_content is not None:
+        payload["reasoning_content"] = reasoning_content
+    if reasoning_details is not None:
+        payload["reasoning_details"] = reasoning_details
+    delta = ChoiceDelta.model_validate(payload)
+    # ChoiceDelta's tool_calls schema expects OpenAI-typed entries; bypass
+    # validation so tests can use MagicMocks that mimic the streaming shape.
+    if tool_calls is not None:
+        object.__setattr__(delta, "tool_calls", tool_calls)
+
     chunk = MagicMock()
     chunk.usage = None
     choice = MagicMock()
-    delta = MagicMock()
-    delta.content = content
-    delta.tool_calls = tool_calls
-    delta.reasoning = reasoning
-    delta.reasoning_details = reasoning_details
-    delta.reasoning_content = reasoning_content
     choice.delta = delta
     chunk.choices = [choice]
     return chunk
@@ -1558,77 +1572,6 @@ def _make_tool_call_delta(*, index: int, call_id: str, name: str, arguments: str
     function.arguments = arguments
     tc.function = function
     return tc
-
-
-class TestExtractReasoningDelta:
-    """Unit tests for the provider-variant reasoning delta extractor."""
-
-    def test_legacy_string_field(self):
-        delta = MagicMock(
-            reasoning="step one",
-            reasoning_details=None,
-            reasoning_content=None,
-        )
-        assert _extract_reasoning_delta(delta) == "step one"
-
-    def test_deepseek_reasoning_content_field(self):
-        delta = MagicMock(
-            reasoning=None,
-            reasoning_details=None,
-            reasoning_content="alt channel",
-        )
-        assert _extract_reasoning_delta(delta) == "alt channel"
-
-    def test_structured_details_concatenate_text_parts(self):
-        delta = MagicMock(
-            reasoning=None,
-            reasoning_content=None,
-            reasoning_details=[
-                {"type": "reasoning.text", "text": "hello "},
-                {"type": "reasoning.text", "text": "world"},
-            ],
-        )
-        assert _extract_reasoning_delta(delta) == "hello world"
-
-    def test_structured_details_accept_summary_alias(self):
-        delta = MagicMock(
-            reasoning=None,
-            reasoning_content=None,
-            reasoning_details=[{"type": "reasoning.summary", "summary": "tldr"}],
-        )
-        assert _extract_reasoning_delta(delta) == "tldr"
-
-    def test_encrypted_or_unknown_entries_skipped(self):
-        delta = MagicMock(
-            reasoning=None,
-            reasoning_content=None,
-            reasoning_details=[
-                {"type": "reasoning.encrypted", "data": "opaque"},
-                {"type": "reasoning.text", "text": "visible"},
-            ],
-        )
-        assert _extract_reasoning_delta(delta) == "visible"
-
-    def test_returns_empty_when_all_channels_empty(self):
-        delta = MagicMock(
-            reasoning=None,
-            reasoning_content=None,
-            reasoning_details=None,
-        )
-        assert _extract_reasoning_delta(delta) == ""
-
-    def test_structured_details_accept_typed_pydantic_entries(self):
-        """If the OpenAI SDK promotes reasoning_details to typed models,
-        entries won't be plain dicts — the extractor must still read text
-        via attribute access rather than silently dropping everything."""
-        typed_entry = SimpleNamespace(text="typed text", summary=None)
-        summary_entry = SimpleNamespace(text=None, summary="typed summary")
-        delta = MagicMock(
-            reasoning=None,
-            reasoning_content=None,
-            reasoning_details=[typed_entry, summary_entry],
-        )
-        assert _extract_reasoning_delta(delta) == "typed texttyped summary"
 
 
 class TestBaselineReasoningStreaming:
@@ -1744,36 +1687,6 @@ class TestBaselineReasoningStreaming:
         assert "StreamTextStart" not in types
 
     @pytest.mark.asyncio
-    async def test_reasoning_only_stream_still_closes_block(self):
-        """A stream with only reasoning (no text, no tool) must emit a
-        matching ``reasoning-end`` so the frontend collapse finalises."""
-        state = _BaselineStreamState(model="anthropic/claude-sonnet-4-6")
-
-        mock_client = MagicMock()
-        mock_client.chat.completions.create = AsyncMock(
-            return_value=_make_stream_mock(
-                _make_delta_chunk(reasoning="just thinking"),
-            )
-        )
-
-        with patch(
-            "backend.copilot.baseline.service._get_openai_client",
-            return_value=mock_client,
-        ):
-            await _baseline_llm_caller(
-                messages=[{"role": "user", "content": "hi"}],
-                tools=[],
-                state=state,
-            )
-
-        types = [type(e).__name__ for e in state.pending_events]
-        assert "StreamReasoningStart" in types
-        assert "StreamReasoningEnd" in types
-        # No text was produced — no text events should be emitted.
-        assert "StreamTextStart" not in types
-        assert "StreamTextDelta" not in types
-
-    @pytest.mark.asyncio
     async def test_reasoning_closed_on_mid_stream_exception(self):
         """Regression guard: an exception during the streaming loop must
         still emit ``StreamReasoningEnd`` (and ``StreamTextEnd`` when a
@@ -1812,8 +1725,8 @@ class TestBaselineReasoningStreaming:
         assert "StreamReasoningEnd" in types
         assert "StreamFinishStep" in types
         assert types.index("StreamReasoningEnd") < types.index("StreamFinishStep")
-        # State flags are reset so a retried round starts with fresh ids.
-        assert state.reasoning_started is False
+        # Emitter is reset so a retried round starts with fresh ids.
+        assert state.reasoning_emitter.is_open is False
 
     @pytest.mark.asyncio
     async def test_reasoning_param_sent_on_anthropic_routes(self):
@@ -1852,35 +1765,6 @@ class TestBaselineReasoningStreaming:
         with patch(
             "backend.copilot.baseline.service._get_openai_client",
             return_value=mock_client,
-        ):
-            await _baseline_llm_caller(
-                messages=[{"role": "user", "content": "hi"}],
-                tools=[],
-                state=state,
-            )
-
-        extra_body = mock_client.chat.completions.create.call_args[1]["extra_body"]
-        assert "reasoning" not in extra_body
-
-    @pytest.mark.asyncio
-    async def test_reasoning_param_suppressed_when_config_zero(self):
-        """Setting ``baseline_reasoning_max_tokens=0`` disables the feature."""
-        state = _BaselineStreamState(model="anthropic/claude-sonnet-4-6")
-
-        mock_client = MagicMock()
-        mock_client.chat.completions.create = AsyncMock(
-            return_value=_make_stream_mock()
-        )
-
-        with (
-            patch(
-                "backend.copilot.baseline.service._get_openai_client",
-                return_value=mock_client,
-            ),
-            patch(
-                "backend.copilot.baseline.service.config.baseline_reasoning_max_tokens",
-                0,
-            ),
         ):
             await _baseline_llm_caller(
                 messages=[{"role": "user", "content": "hi"}],

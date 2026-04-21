@@ -27,6 +27,10 @@ from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolPara
 from openai.types.completion_usage import PromptTokensDetails
 from opentelemetry import trace as otel_trace
 
+from backend.copilot.baseline.reasoning import (
+    BaselineReasoningEmitter,
+    reasoning_extra_body,
+)
 from backend.copilot.config import CopilotLlmModel, CopilotMode
 from backend.copilot.context import get_workspace_manager, set_execution_context
 from backend.copilot.graphiti.config import is_enabled_for_user
@@ -53,9 +57,6 @@ from backend.copilot.response_model import (
     StreamError,
     StreamFinish,
     StreamFinishStep,
-    StreamReasoningDelta,
-    StreamReasoningEnd,
-    StreamReasoningStart,
     StreamStart,
     StreamStartStep,
     StreamTextDelta,
@@ -339,8 +340,9 @@ class _BaselineStreamState:
     assistant_text: str = ""
     text_block_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     text_started: bool = False
-    reasoning_block_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    reasoning_started: bool = False
+    reasoning_emitter: BaselineReasoningEmitter = field(
+        default_factory=BaselineReasoningEmitter
+    )
     turn_prompt_tokens: int = 0
     turn_completion_tokens: int = 0
     turn_cache_read_tokens: int = 0
@@ -490,64 +492,6 @@ def _mark_system_message_with_cache_control(
     return cached_messages
 
 
-def _extract_reasoning_delta(delta: Any) -> str:
-    """Pull reasoning text out of an OpenAI-compat streaming delta.
-
-    OpenRouter's Anthropic routes emit extended-thinking content on
-    non-standard delta fields (not part of the OpenAI schema):
-
-    * ``delta.reasoning`` — legacy string, enabled by ``include_reasoning``.
-    * ``delta.reasoning_content`` — DeepSeek / some OpenRouter routes.
-    * ``delta.reasoning_details`` — structured list shipped with the new
-      unified ``reasoning`` request param.  Each entry carries a
-      ``type: "reasoning.text" | "reasoning.summary" | ...`` and a text
-      field (``text`` / ``summary``).  Encrypted or unknown entries carry
-      no user-visible text and are skipped.
-
-    Entries may be plain ``dict`` (OpenRouter today) or typed pydantic
-    models (if the OpenAI SDK ever promotes these to first-class fields).
-    We support both shapes to stay resilient to upstream drift.
-
-    Returns the concatenated text for this chunk, or an empty string when
-    no reasoning payload is present.  Safe to call on every chunk.
-    """
-    legacy = getattr(delta, "reasoning", None) or getattr(
-        delta, "reasoning_content", None
-    )
-    if legacy and isinstance(legacy, str):
-        return legacy
-    details = getattr(delta, "reasoning_details", None)
-    if not details:
-        return ""
-    parts: list[str] = []
-    for entry in details:
-        if isinstance(entry, dict):
-            text = entry.get("text") or entry.get("summary")
-        else:
-            text = getattr(entry, "text", None) or getattr(entry, "summary", None)
-        if isinstance(text, str) and text:
-            parts.append(text)
-    return "".join(parts)
-
-
-def _close_reasoning_block_if_open(state: _BaselineStreamState) -> None:
-    """Emit a ``StreamReasoningEnd`` for any open reasoning block and rotate.
-
-    A reasoning block must close before any text or tool_use starts, and
-    also at stream end — AI SDK v5 rejects interleaved reasoning / text
-    parts and needs a matching end to finalise the frontend collapse.
-    Rotating the block id guarantees the next reasoning block starts fresh
-    rather than reusing an already-closed id.
-
-    Idempotent — no events are emitted when no reasoning block is open.
-    """
-    if not state.reasoning_started:
-        return
-    state.pending_events.append(StreamReasoningEnd(id=state.reasoning_block_id))
-    state.reasoning_started = False
-    state.reasoning_block_id = str(uuid.uuid4())
-
-
 async def _baseline_llm_caller(
     messages: list[dict[str, Any]],
     tools: Sequence[Any],
@@ -600,15 +544,11 @@ async def _baseline_llm_caller(
             extra_headers = None
         typed_messages = cast(list[ChatCompletionMessageParam], final_messages)
         extra_body: dict[str, Any] = dict(_OPENROUTER_INCLUDE_USAGE_COST)
-        # OpenRouter exposes extended thinking on Anthropic routes via the
-        # non-OpenAI ``reasoning`` extension field.  When set, it streams
-        # thinking deltas as ``delta.reasoning`` (legacy text) /
-        # ``delta.reasoning_details`` (structured) so the frontend can render
-        # a Reasoning collapse.  Other providers silently ignore the field.
-        if is_anthropic and config.baseline_reasoning_max_tokens > 0:
-            extra_body["reasoning"] = {
-                "max_tokens": config.baseline_reasoning_max_tokens,
-            }
+        reasoning_param = reasoning_extra_body(
+            state.model, config.claude_agent_max_thinking_tokens
+        )
+        if reasoning_param:
+            extra_body.update(reasoning_param)
         create_kwargs: dict[str, Any] = {
             "model": state.model,
             "messages": typed_messages,
@@ -664,25 +604,14 @@ async def _baseline_llm_caller(
                 if not delta:
                     continue
 
-                reasoning_emit = _extract_reasoning_delta(delta)
-                if reasoning_emit:
-                    if not state.reasoning_started:
-                        state.pending_events.append(
-                            StreamReasoningStart(id=state.reasoning_block_id)
-                        )
-                        state.reasoning_started = True
-                    state.pending_events.append(
-                        StreamReasoningDelta(
-                            id=state.reasoning_block_id, delta=reasoning_emit
-                        )
-                    )
+                state.pending_events.extend(state.reasoning_emitter.on_delta(delta))
 
                 if delta.content:
                     # Text and reasoning must not interleave on the wire — the
                     # AI SDK maps distinct start/end pairs to distinct UI
                     # parts.  Close any open reasoning block before emitting
                     # the first text delta of this run.
-                    _close_reasoning_block_if_open(state)
+                    state.pending_events.extend(state.reasoning_emitter.close())
                     emit = state.thinking_stripper.process(delta.content)
                     if emit:
                         if not state.text_started:
@@ -699,7 +628,7 @@ async def _baseline_llm_caller(
                     # Same rule as the text branch: close any open reasoning
                     # block before a tool_use starts so the AI SDK treats
                     # reasoning and tool-use as distinct parts.
-                    _close_reasoning_block_if_open(state)
+                    state.pending_events.extend(state.reasoning_emitter.close())
                     for tc in delta.tool_calls:
                         idx = tc.index
                         if idx not in tool_calls_by_index:
@@ -730,7 +659,7 @@ async def _baseline_llm_caller(
         # ``async for chunk in response`` would otherwise leave reasoning
         # and/or text unterminated and only ``StreamFinishStep`` emitted —
         # the Reasoning / Text collapses would never finalise.
-        _close_reasoning_block_if_open(state)
+        state.pending_events.extend(state.reasoning_emitter.close())
         # Flush any buffered text held back by the thinking stripper.
         tail = state.thinking_stripper.flush()
         if tail:
