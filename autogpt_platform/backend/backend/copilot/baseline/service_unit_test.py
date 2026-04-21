@@ -1840,3 +1840,36 @@ class TestBaselineReasoningStreaming:
 
         extra_body = mock_client.chat.completions.create.call_args[1]["extra_body"]
         assert "reasoning" not in extra_body
+
+    @pytest.mark.asyncio
+    async def test_reasoning_persists_to_state_session_messages(self):
+        """Integration guard: ``_BaselineStreamState.__post_init__`` wires
+        the emitter to ``state.session_messages``, so reasoning deltas
+        flowing through ``_baseline_llm_caller`` must produce a
+        ``role="reasoning"`` row on the state's session list.  Catches
+        regressions where the wiring silently breaks (e.g. a refactor
+        passes the wrong list reference)."""
+        state = _BaselineStreamState(model="anthropic/claude-sonnet-4-6")
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_make_stream_mock(
+                _make_delta_chunk(reasoning="first "),
+                _make_delta_chunk(reasoning="thought"),
+                _make_delta_chunk(content="answer"),
+            )
+        )
+
+        with patch(
+            "backend.copilot.baseline.service._get_openai_client",
+            return_value=mock_client,
+        ):
+            await _baseline_llm_caller(
+                messages=[{"role": "user", "content": "hi"}],
+                tools=[],
+                state=state,
+            )
+
+        reasoning_rows = [m for m in state.session_messages if m.role == "reasoning"]
+        assert len(reasoning_rows) == 1
+        assert reasoning_rows[0].content == "first thought"
