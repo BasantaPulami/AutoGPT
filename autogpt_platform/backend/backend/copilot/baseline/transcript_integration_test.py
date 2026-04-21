@@ -65,58 +65,70 @@ def _make_session_messages(*roles: str) -> list[ChatMessage]:
 class TestResolveBaselineModel:
     """Baseline model resolution honours the per-request tier toggle.
 
-    The baseline resolver diverged from SDK's ``resolve_chat_model`` in this
-    PR: ``standard`` / ``None`` on baseline now picks ``config.fast_model``
-    (Kimi K2.6 by default) instead of ``config.model`` (Sonnet), because
-    baseline speaks plain OpenAI-compat and can route anywhere cheaper,
-    while SDK still needs an Anthropic endpoint for the Claude Agent SDK
-    CLI.  ``advanced`` remains ``config.advanced_model`` (Opus) on both
-    paths — there's no Kimi equivalent at the top tier.
+    Baseline reads the ``fast_*_model`` cells of the (path, tier) matrix
+    and never falls through to the SDK-side ``thinking_*_model`` cells.
+    Default routing:
+    - ``standard`` / ``None`` → ``config.fast_standard_model`` (Kimi K2.6)
+    - ``advanced`` → ``config.fast_advanced_model`` (Opus — same as SDK's
+      advanced tier, so the advanced A/B isolates path differences)
     """
 
-    def test_advanced_tier_selects_advanced_model(self):
-        assert _resolve_baseline_model("advanced") == config.advanced_model
+    def test_advanced_tier_selects_fast_advanced_model(self):
+        assert _resolve_baseline_model("advanced") == config.fast_advanced_model
 
-    def test_standard_tier_selects_fast_model(self):
-        assert _resolve_baseline_model("standard") == config.fast_model
+    def test_standard_tier_selects_fast_standard_model(self):
+        assert _resolve_baseline_model("standard") == config.fast_standard_model
 
-    def test_none_tier_selects_fast_model(self):
-        """Baseline users without a tier get the cheap fast default."""
-        assert _resolve_baseline_model(None) == config.fast_model
+    def test_none_tier_selects_fast_standard_model(self):
+        """Baseline users without a tier get the cheap fast-standard default."""
+        assert _resolve_baseline_model(None) == config.fast_standard_model
 
-    def test_fast_model_default_is_kimi(self):
-        """Sanity: Kimi K2.6 is the shipped default cheap reasoning route.
+    def test_fast_standard_default_is_kimi(self):
+        """Shipped default: Kimi K2.6 on the baseline standard cell.
 
         Asserts the declared ``Field`` default — env-independent — so a
-        deploy-time ``CHAT_FAST_MODEL`` rollback override doesn't fail CI
-        while still pinning the shipped default.
+        deploy-time ``CHAT_FAST_STANDARD_MODEL`` rollback override
+        doesn't fail CI while still pinning the shipped default.
         """
         from backend.copilot.config import ChatConfig
 
-        assert ChatConfig.model_fields["fast_model"].default == "moonshotai/kimi-k2.6"
-
-    def test_sdk_and_baseline_standard_defaults_diverge(self):
-        """The whole point of the split: baseline cheap (Kimi) vs SDK
-        Anthropic-only (Sonnet).  If the shipped defaults ever collapse
-        to the same value someone lost the cost savings.  Checked against
-        ``Field`` defaults, not the env-backed singleton."""
-        from backend.copilot.config import ChatConfig
-
         assert (
-            ChatConfig.model_fields["model"].default
-            != ChatConfig.model_fields["fast_model"].default
+            ChatConfig.model_fields["fast_standard_model"].default
+            == "moonshotai/kimi-k2.6"
         )
 
-    def test_standard_and_advanced_models_differ(self):
-        """Advanced tier defaults to a different (Opus) model than standard.
-
-        Checked against declared ``Field`` defaults so operator env
-        overrides don't flake the test."""
+    def test_fast_advanced_default_is_opus(self):
+        """Shipped default: Opus on the baseline advanced cell — mirrors
+        the SDK advanced cell so the advanced-tier A/B stays clean
+        (same model, different path)."""
         from backend.copilot.config import ChatConfig
 
         assert (
-            ChatConfig.model_fields["fast_model"].default
-            != ChatConfig.model_fields["advanced_model"].default
+            ChatConfig.model_fields["fast_advanced_model"].default
+            == "anthropic/claude-opus-4-7"
+        )
+
+    def test_standard_cells_diverge_across_paths(self):
+        """The whole point of the split: baseline cheap (Kimi) vs SDK
+        Anthropic-only (Sonnet).  If the shipped standard defaults ever
+        collapse to the same value someone lost the cost savings.
+        Checked against ``Field`` defaults, not the env-backed singleton."""
+        from backend.copilot.config import ChatConfig
+
+        assert (
+            ChatConfig.model_fields["thinking_standard_model"].default
+            != ChatConfig.model_fields["fast_standard_model"].default
+        )
+
+    def test_standard_and_advanced_cells_differ_on_fast(self):
+        """Advanced tier defaults to a different model than standard on
+        the baseline path.  Checked against declared ``Field`` defaults
+        so operator env overrides don't flake the test."""
+        from backend.copilot.config import ChatConfig
+
+        assert (
+            ChatConfig.model_fields["fast_standard_model"].default
+            != ChatConfig.model_fields["fast_advanced_model"].default
         )
 
 

@@ -3,7 +3,7 @@
 import os
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings
 
 from backend.util.clients import OPENROUTER_BASE_URL
@@ -17,8 +17,8 @@ from backend.util.clients import OPENROUTER_BASE_URL
 CopilotMode = Literal["fast", "extended_thinking"]
 
 # Per-request model tier set by the frontend model toggle.
-# 'standard' uses ``ChatConfig.model`` (Sonnet by default).
-# 'advanced' uses ``ChatConfig.advanced_model`` (Opus by default).
+# 'standard' picks the cheaper everyday model for the active path.
+# 'advanced' picks the premium model for the active path (Opus today).
 # None means no preference — falls through to LD per-user targeting, then config.
 # Using tier names instead of model names keeps the contract model-agnostic.
 CopilotLlmModel = Literal["standard", "advanced"]
@@ -27,36 +27,66 @@ CopilotLlmModel = Literal["standard", "advanced"]
 class ChatConfig(BaseSettings):
     """Configuration for the chat system."""
 
-    # Chat model tiers — applied orthogonally to the path (fast=baseline vs
-    # extended_thinking=SDK).  The "fast" vs "extended_thinking" toggle picks
-    # which code path runs (no reasoning / heavy SDK); "standard" vs
-    # "advanced" picks the model inside that path.
-    model: str = Field(
-        default="anthropic/claude-sonnet-4-6",
-        description="Model used for the 'standard' tier in the SDK "
-        "(extended thinking) path (Sonnet by default). The baseline / fast "
-        "path reads ``fast_model`` instead so the two paths can evolve "
-        "independently (cheaper provider on baseline, Anthropic-only CLI on "
-        "SDK). Override via CHAT_MODEL env var.",
-    )
-    fast_model: str = Field(
+    # Chat model tiers — a 2×2 of (path, tier).  ``path`` = ``CopilotMode``
+    # (``"fast"`` → baseline OpenAI-compat / any OpenRouter model;
+    # ``"extended_thinking"`` → Claude Agent SDK, Anthropic-only CLI).
+    # ``tier`` = ``CopilotLlmModel`` (``"standard"`` / ``"advanced"``).
+    # Each cell has its own config so the two paths can evolve
+    # independently (cheap provider on baseline, Anthropic on SDK) at each
+    # tier without conflating one path's needs with the other's constraint.
+    #
+    # Historical env var names (``CHAT_MODEL`` / ``CHAT_ADVANCED_MODEL`` /
+    # ``CHAT_FAST_MODEL``) are preserved via ``validation_alias`` so
+    # existing deployments continue to override the same effective cell.
+    fast_standard_model: str = Field(
         default="moonshotai/kimi-k2.6",
-        description="Model used for the 'standard' / ``None`` tier on the "
-        "baseline (fast) path. Kimi K2.6 by default: ~5x cheaper input and "
-        "~5.4x cheaper output than Sonnet, SWE-Bench Verified parity with "
-        "Opus, and OpenRouter advertises the ``reasoning`` + "
-        "``include_reasoning`` extension params on the Moonshot endpoints — "
-        "so our existing baseline reasoning plumbing lights up without "
-        "provider-specific code. Fall back to the Anthropic route by "
-        "setting ``CHAT_FAST_MODEL=anthropic/claude-sonnet-4-6`` (then "
+        validation_alias=AliasChoices(
+            "CHAT_FAST_STANDARD_MODEL",
+            "CHAT_FAST_MODEL",
+        ),
+        description="Baseline path, 'standard' / ``None`` tier.  Kimi K2.6 "
+        "by default: ~5x cheaper input and ~5.4x cheaper output than Sonnet, "
+        "SWE-Bench Verified parity with Opus, and OpenRouter advertises the "
+        "``reasoning`` + ``include_reasoning`` extension params on the "
+        "Moonshot endpoints — so the baseline reasoning plumbing lights up "
+        "without provider-specific code.  Roll back to the Anthropic route "
+        "via ``CHAT_FAST_STANDARD_MODEL=anthropic/claude-sonnet-4-6`` (then "
         "``cache_control`` breakpoints reactivate via "
         "``_is_anthropic_model``).",
     )
-    advanced_model: str = Field(
+    fast_advanced_model: str = Field(
         default="anthropic/claude-opus-4-7",
-        description="Model used for the 'advanced' tier (Opus by default). "
-        "Applies to both baseline (fast) and SDK (extended thinking) paths. "
-        "Override via CHAT_ADVANCED_MODEL env var.",
+        description="Baseline path, 'advanced' tier.  Opus by default so "
+        "the advanced tier is a clean A/B vs the SDK advanced tier: same "
+        "model, different path — isolates the reasoning-wire + cache "
+        "differences from model capability differences.  Kimi K2-Thinking "
+        "(the reasoning-native sibling) benchmarks ~9pp behind K2.6 on "
+        "SWE-Bench Verified and ~23pp behind on BrowseComp, is text-only, "
+        "and was published 6 months before K2.6 — not a fit for the "
+        "advanced tier today.  Override via ``CHAT_FAST_ADVANCED_MODEL``.",
+    )
+    thinking_standard_model: str = Field(
+        default="anthropic/claude-sonnet-4-6",
+        validation_alias=AliasChoices(
+            "CHAT_THINKING_STANDARD_MODEL",
+            "CHAT_MODEL",
+        ),
+        description="SDK (extended-thinking) path, 'standard' / ``None`` "
+        "tier.  Sonnet by default: the Claude Agent SDK CLI only speaks to "
+        "Anthropic endpoints, so the standard SDK tier has to stay on an "
+        "Anthropic model regardless of what the baseline path runs.  "
+        "Override via ``CHAT_THINKING_STANDARD_MODEL`` (legacy "
+        "``CHAT_MODEL`` still honored).",
+    )
+    thinking_advanced_model: str = Field(
+        default="anthropic/claude-opus-4-7",
+        validation_alias=AliasChoices(
+            "CHAT_THINKING_ADVANCED_MODEL",
+            "CHAT_ADVANCED_MODEL",
+        ),
+        description="SDK (extended-thinking) path, 'advanced' tier.  Opus "
+        "by default.  Override via ``CHAT_THINKING_ADVANCED_MODEL`` "
+        "(legacy ``CHAT_ADVANCED_MODEL`` still honored).",
     )
     title_model: str = Field(
         default="openai/gpt-4o-mini",
@@ -441,3 +471,10 @@ class ChatConfig(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         extra = "ignore"  # Ignore extra environment variables
+        # Accept both the Python attribute name and the validation_alias when
+        # constructing a ``ChatConfig`` directly (e.g. in tests passing
+        # ``thinking_standard_model=...``).  Without this, pydantic only
+        # accepts the alias names (``CHAT_THINKING_STANDARD_MODEL`` env) and
+        # rejects field-name kwargs — breaking ``ChatConfig(field=...)`` in
+        # every test that constructs a config.
+        populate_by_name = True

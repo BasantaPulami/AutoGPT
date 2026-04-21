@@ -317,17 +317,17 @@ def _filter_tools_by_permissions(
 def _resolve_baseline_model(tier: CopilotLlmModel | None) -> str:
     """Pick the model for the baseline path based on the per-request tier.
 
-    Baseline diverges from SDK on the ``'standard'`` / ``None`` tier:
-    baseline uses :attr:`ChatConfig.fast_model` (Kimi K2.6 by default, a
-    cheaper provider with the same OpenRouter ``reasoning`` extension),
-    while SDK stays on :attr:`ChatConfig.model` because the Claude Agent
-    SDK CLI only speaks to Anthropic endpoints.  ``'advanced'`` still
-    resolves to :attr:`ChatConfig.advanced_model` (Opus) on both paths —
-    there's no Kimi equivalent at the top tier.
+    Baseline resolves independently of SDK via the ``fast_*_model`` cells
+    of the (path, tier) matrix.  ``'standard'`` / ``None`` picks Kimi
+    K2.6 by default (cheap + OpenRouter ``reasoning`` support);
+    ``'advanced'`` picks Opus by default so the advanced tier is a clean
+    A/B against the SDK advanced tier — same model, different path —
+    isolating reasoning-wire + cache differences from model capability.
+    Both defaults are overridable per ``CHAT_FAST_*_MODEL`` env vars.
     """
     if tier == "advanced":
-        return config.advanced_model
-    return config.fast_model
+        return config.fast_advanced_model
+    return config.fast_standard_model
 
 
 @dataclass
