@@ -162,23 +162,49 @@ def _is_reasoning_route(model: str) -> bool:
     because ``cache_control`` is strictly Anthropic-specific (Moonshot does
     its own auto-caching), so the two gates must not conflate.
 
-    The Kimi match anchors on the ``moonshotai/`` provider prefix or on a
-    bare / OpenRouter-prefixed ``kimi-`` model id (``kimi-k2.6``,
-    ``moonshotai/kimi-k2-thinking``, ``openrouter/kimi-k2.6``), so unrelated
-    models that happen to contain ``kimi`` as a substring (e.g. a
-    hypothetical ``some-provider/hakimi-large``) are not treated as
-    reasoning routes.
+    Both the Claude and Kimi matches are anchored to the provider
+    prefix (or to a bare model id with no prefix at all) to avoid
+    substring false positives — a custom ``some-other-provider/claude-mock``
+    or ``provider/hakimi-large`` configured via
+    ``CHAT_FAST_STANDARD_MODEL`` must NOT inherit the reasoning
+    extra_body and take a 400 from its upstream.  Recognised shapes:
+
+    * Claude — ``anthropic/`` or ``anthropic.`` provider prefix, or a
+      bare ``claude-`` model id with no provider prefix
+      (``claude-opus-4.7``, ``anthropic/claude-sonnet-4-6``,
+      ``anthropic.claude-3-5-sonnet``).  A non-Anthropic prefix like
+      ``someprovider/claude-mock`` is rejected on purpose.
+    * Kimi — ``moonshotai/`` provider prefix, or a ``kimi-`` model id
+      with no provider prefix (``kimi-k2.6``,
+      ``moonshotai/kimi-k2-thinking``).  Like Claude, a non-Moonshot
+      prefix is rejected — exception: ``openrouter/kimi-k2.6`` stays
+      recognised because ``openrouter/`` is how we route to Moonshot
+      today and changing that would be a behaviour regression for
+      existing deployments.
     """
     lowered = model.lower()
-    if "claude" in lowered or lowered.startswith("anthropic"):
+    if lowered.startswith("anthropic"):
         return True
     if lowered.startswith("moonshotai/"):
         return True
-    # Match a ``kimi-`` model id at string start or immediately after a
-    # provider prefix ``/`` — avoids substring false positives like
-    # ``hakimi``.
-    bare = lowered.rsplit("/", 1)[-1]
-    return bare.startswith("kimi-")
+    # ``openrouter/`` historically routes to whatever the default
+    # upstream for the model is — for kimi that's Moonshot, so accept
+    # ``openrouter/kimi-...`` here.  Other ``openrouter/`` models
+    # (e.g. ``openrouter/auto``) fall through to the no-prefix check
+    # below and are rejected unless they start with ``claude-`` /
+    # ``kimi-`` after the slash, which no real OpenRouter route does.
+    if lowered.startswith("openrouter/kimi-"):
+        return True
+    if "/" in lowered:
+        # Any other provider prefix is a custom / non-Anthropic /
+        # non-Moonshot route and must not opt into reasoning.  This
+        # blocks substring false positives like
+        # ``some-provider/claude-mock-v1`` or ``other/kimi-pro``.
+        return False
+    # No provider prefix — accept bare ``claude-*`` and ``kimi-*`` ids
+    # so direct CLI configs (``claude-3-5-sonnet-20241022``,
+    # ``kimi-k2-instruct``) keep working.
+    return lowered.startswith("claude-") or lowered.startswith("kimi-")
 
 
 def reasoning_extra_body(model: str, max_thinking_tokens: int) -> dict[str, Any] | None:

@@ -173,6 +173,21 @@ class TestIsReasoningRoute:
         assert not _is_reasoning_route("hakimi")
         assert not _is_reasoning_route("akimi-7b")
 
+    def test_claude_substring_false_positives_rejected(self):
+        # Regression (Sentry review on #12871): ``'claude' in lowered``
+        # matched any substring — a custom
+        # ``someprovider/claude-mock-v1`` set via
+        # ``CHAT_FAST_STANDARD_MODEL`` would inherit the reasoning
+        # extra_body and take a 400 from its upstream.  The anchored
+        # match requires either an ``anthropic`` / ``anthropic.`` /
+        # ``anthropic/`` prefix, or a bare ``claude-`` id with no
+        # provider prefix.
+        assert not _is_reasoning_route("someprovider/claude-mock-v1")
+        assert not _is_reasoning_route("custom/claude-like-model")
+        # Same principle for Kimi — a non-Moonshot provider prefix is
+        # rejected even when the model id starts with ``kimi-``.
+        assert not _is_reasoning_route("other/kimi-pro")
+
 
 class TestReasoningExtraBody:
     def test_anthropic_route_returns_fragment(self):
