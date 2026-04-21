@@ -60,6 +60,7 @@ export function getToolCategory(toolName: string): ToolCategory {
     case "bash_exec":
       return "bash";
     case "web_fetch":
+    case "web_search":
     case "WebSearch":
     case "WebFetch":
       return "web";
