@@ -56,12 +56,7 @@ class ListSchedulesTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "List existing scheduled agent executions for the current "
-            "user. Optionally filter by library_agent_id or graph_id "
-            "to list schedules for a specific agent. Use before "
-            "delete_schedule to find the schedule_id."
-        )
+        return "List agent run schedules. Use before delete_schedule."
 
     @property
     def requires_auth(self) -> bool:
@@ -74,15 +69,11 @@ class ListSchedulesTool(BaseTool):
             "properties": {
                 "library_agent_id": {
                     "type": "string",
-                    "description": (
-                        "Optional: filter to schedules for this " "library agent only."
-                    ),
+                    "description": "Filter by library agent.",
                 },
                 "graph_id": {
                     "type": "string",
-                    "description": (
-                        "Optional: filter to schedules for this agent " "graph only."
-                    ),
+                    "description": "Filter by graph.",
                 },
             },
             "required": [],
@@ -161,10 +152,7 @@ class DeleteScheduleTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "Delete a scheduled agent execution by schedule_id. Use "
-            "list_schedules to find the schedule_id first."
-        )
+        return "Delete an agent run schedule by schedule_id."
 
     @property
     def requires_auth(self) -> bool:
@@ -177,7 +165,7 @@ class DeleteScheduleTool(BaseTool):
             "properties": {
                 "schedule_id": {
                     "type": "string",
-                    "description": ("The schedule ID to delete (from list_schedules)."),
+                    "description": "Schedule ID from list_schedules.",
                 },
             },
             "required": ["schedule_id"],
