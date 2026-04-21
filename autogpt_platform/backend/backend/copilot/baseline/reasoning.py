@@ -183,7 +183,7 @@ def _is_reasoning_route(model: str) -> bool:
       existing deployments.
     """
     lowered = model.lower()
-    if lowered.startswith("anthropic"):
+    if lowered.startswith(("anthropic/", "anthropic.")):
         return True
     if lowered.startswith("moonshotai/"):
         return True
