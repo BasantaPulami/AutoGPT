@@ -173,19 +173,8 @@ class BaselineReasoningEmitter:
     in-place as further deltas arrive; :meth:`close` drops the reference
     but leaves the appended row intact.
 
-    Pass ``render_in_ui=False`` to suppress the ``StreamReasoning*`` wire
-    events AND the ``ChatMessage(role="reasoning")`` persistence row — the
-    emitter still reads the reasoning payload and still advances its state
-    machine (so block ids rotate across turns and ``is_open`` stays
-    consistent), but returns empty event lists from :meth:`on_delta` and
-    :meth:`close` and never appends to ``session_messages``.  Persistence
-    is suppressed because ``convertChatSessionToUiMessages`` unconditionally
-    re-renders persisted reasoning rows as ``{type: "reasoning"}`` UI parts
-    on reload — keeping them while silencing the live wire would resurrect
-    the reasoning collapse the moment the user refreshed, making the flag
-    a no-op post-reload.  The model still reasons and OpenRouter / the SDK
-    transcript retain the audit trail; ``session.messages`` only needs
-    reasoning rows when the UI actually renders them.
+    ``render_in_ui=False`` suppresses wire events + persistence row;
+    state machine still advances.
     """
 
     def __init__(
@@ -212,15 +201,6 @@ class BaselineReasoningEmitter:
         Persistence (when a session message list is attached) happens in
         lockstep with emission so the row's content stays equal to the
         concatenated deltas at every delta boundary.
-
-        When ``render_in_ui=False`` both the wire events AND the persistence
-        row are suppressed (``session_messages`` is left untouched) — the
-        state machine still advances (``_open`` / ``_block_id`` rotate) so
-        ``close`` stays symmetric across turns.  Persistence is dropped in
-        lockstep with the wire events because the frontend's hydration path
-        (``convertChatSessionToUiMessages``) would otherwise re-render the
-        persisted rows as reasoning parts on reload, silently undoing the
-        operator's intent.
         """
         ext = OpenRouterDeltaExtension.from_delta(delta)
         text = ext.visible_text()
@@ -248,13 +228,6 @@ class BaselineReasoningEmitter:
         than reusing one already closed on the wire.  The persisted row is
         not removed — it stays in ``session_messages`` as the durable
         record of what was reasoned.
-
-        When ``render_in_ui=False`` the wire event is suppressed (empty
-        list returned) but the block still rotates so subsequent reasoning
-        uses a fresh id — keeps the state machine in lockstep with the
-        render-on branch.  Nothing is removed from ``session_messages``
-        because ``on_delta`` never appended a row in the first place when
-        render was off.
         """
         if not self._open:
             return []

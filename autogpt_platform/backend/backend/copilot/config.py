@@ -207,37 +207,15 @@ class ChatConfig(BaseSettings):
     )
     render_reasoning_in_ui: bool = Field(
         default=True,
-        description="Render extended-thinking reasoning as live UI parts "
-        "(``reasoning-start``/``reasoning-delta``/``reasoning-end``) on the "
-        "wire AND as persisted ``role='reasoning'`` rows in "
-        "``session.messages``. When False, the baseline emitter and the SDK "
-        "response adapter suppress the three reasoning wire events AND skip "
-        "the ``ChatMessage(role='reasoning')`` persistence — the model still "
-        "reasons and tokens are still billed, but the frontend sees a "
-        "text-only stream on the live wire and on reload. Persistence is "
-        "coupled to the wire events because "
-        "``convertChatSessionToUiMessages.ts`` unconditionally re-renders "
-        "persisted reasoning rows as ``{type: 'reasoning'}`` UI parts; "
-        "keeping the rows while silencing the live wire would resurrect the "
-        "collapse on refresh. Audit trail of the reasoning content remains "
-        "available through the SDK transcript "
-        "(``_format_sdk_content_blocks``) / upstream provider logs; "
-        "``session.messages`` is a UI-render store, not an audit store.",
+        description="Render reasoning as live UI parts + persist "
+        "``role='reasoning'`` rows. False suppresses both; tokens are still "
+        "billed upstream.",
     )
     stream_replay_count: int = Field(
         default=200,
         ge=1,
         le=10000,
-        description="Maximum number of Redis stream entries replayed on SSE "
-        "reconnect in :func:`stream_registry.subscribe_to_session`. Lowered "
-        "from 1000 to bound the replay storm when a tab-switch / throttle "
-        "triggers multiple quick reconnects — 200 still covers a full Kimi "
-        "turn after coalescing (~150 events) and leaves headroom for long "
-        "Opus tool loops. Redis ``XREAD`` ``count`` caps the *response size*, "
-        "not the total events that existed; dropping older entries on replay "
-        "is acceptable because the frontend deduplicates on block ids. "
-        "Scoped to the SSE resume path only — live stream listener XREAD "
-        "(no replay) is unchanged.",
+        description="Max Redis stream entries replayed on SSE reconnect.",
     )
     claude_agent_thinking_effort: Literal["low", "medium", "high", "max"] | None = (
         Field(

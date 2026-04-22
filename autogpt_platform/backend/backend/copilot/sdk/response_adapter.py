@@ -68,18 +68,8 @@ class SDKResponseAdapter:
         self.reasoning_block_id = str(uuid.uuid4())
         self.has_started_reasoning = False
         self.has_ended_reasoning = True
-        # When False, ``_ensure_reasoning_started`` / ``StreamReasoningDelta``
-        # emission / ``_end_reasoning_if_open`` become no-ops so the frontend
-        # sees a text-only stream for a ``ThinkingBlock``.  ``session.messages``
-        # persistence is also skipped as a side-effect: ``_dispatch_response``
-        # only creates a ``ChatMessage(role="reasoning")`` row on
-        # ``StreamReasoningStart`` (see ``sdk/service.py``), which is
-        # suppressed here.  That keeps the SDK path in lockstep with the
-        # baseline emitter — flag off means no live wire, no persisted row,
-        # and therefore no hydrated reasoning collapse on reload.  The
-        # ThinkingBlock content is still carried through
-        # ``_format_sdk_content_blocks`` into the SDK transcript for
-        # ``--resume`` continuity, which is independent of ``session.messages``.
+        # When False, reasoning wire events + persisted reasoning rows are
+        # suppressed; transcript continuity is unaffected.
         self._render_reasoning_in_ui = render_reasoning_in_ui
         self.current_tool_calls: dict[str, dict[str, str]] = {}
         self.resolved_tool_calls: set[str] = set()
